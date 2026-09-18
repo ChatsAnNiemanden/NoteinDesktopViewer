@@ -22,7 +22,9 @@ public class FileItem
 
 public partial class MainWindow : Window
 {
+#if !DISABLE_GOOGLE_DRIVE
     private readonly GoogleDriveService _driveService = new();
+#endif
     private readonly LocalFolderService _localService = new();
     private INoteSourceService _activeService = null!;
     private readonly AppSettings _settings;
@@ -32,23 +34,32 @@ public partial class MainWindow : Window
         _settings = AppSettings.Load();
         InitializeComponent();
         
+#if !DISABLE_GOOGLE_DRIVE
+        SourceComboBox.Items.Add(new ComboBoxItem { Content = "Google Drive" });
+#endif
+        SourceComboBox.Items.Add(new ComboBoxItem { Content = "Local Folder" });
+
         if (!string.IsNullOrEmpty(_settings.LastLocalFolder))
         {
             _localService.SourceFolder = _settings.LastLocalFolder;
         }
+#if !DISABLE_GOOGLE_DRIVE
         if (!string.IsNullOrEmpty(_settings.GoogleDriveTargetFolder))
         {
             _driveService.TargetFolderName = _settings.GoogleDriveTargetFolder;
         }
+#endif
 
-        if (SourceComboBox.SelectedIndex == _settings.LastSourceIndex)
-        {
-            UpdateSourceUI();
-        }
-        else
+        if (_settings.LastSourceIndex >= 0 && _settings.LastSourceIndex < SourceComboBox.Items.Count)
         {
             SourceComboBox.SelectedIndex = _settings.LastSourceIndex;
         }
+        else
+        {
+            SourceComboBox.SelectedIndex = 0;
+        }
+        
+        UpdateSourceUI();
     }
 
     private void OnSourceChanged(object? sender, SelectionChangedEventArgs e)
@@ -72,7 +83,10 @@ public partial class MainWindow : Window
         PdfWebView.IsVisible = false;
         PdfPlaceholder.IsVisible = true;
         
-        if (SourceComboBox.SelectedIndex == 0) // Google Drive
+        var selectedContent = (SourceComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        
+#if !DISABLE_GOOGLE_DRIVE
+        if (selectedContent == "Google Drive") // Google Drive
         {
             _activeService = _driveService;
             SelectLocalFolderButton.IsVisible = false;
@@ -98,6 +112,7 @@ public partial class MainWindow : Window
             }
         }
         else // Local Folder
+#endif
         {
             _activeService = _localService;
             LoginButton.IsVisible = false;
@@ -144,6 +159,7 @@ public partial class MainWindow : Window
 
     private async void SyncOnStartupWhenLoggedIn()
     {
+#if !DISABLE_GOOGLE_DRIVE
         if (_driveService.HasSavedToken)
         {
             LoginButton.IsVisible = false;
@@ -178,10 +194,12 @@ public partial class MainWindow : Window
                 LoadingPanel.IsVisible = false;
             }
         }
+#endif
     }
 
     private async void OnLoginClick(object? sender, RoutedEventArgs e)
     {
+#if !DISABLE_GOOGLE_DRIVE
         LoginButton.IsEnabled = false;
         ManuelSyncButton.IsEnabled = true;
         ErrorText.IsVisible = false;
@@ -221,10 +239,12 @@ public partial class MainWindow : Window
         {
             LoadingPanel.IsVisible = false;
         }
+#endif
     }
 
     private async void OnLogoutClick(object? sender, RoutedEventArgs e)
     {
+#if !DISABLE_GOOGLE_DRIVE
         LogoutButton.IsEnabled = false;
         ErrorText.IsVisible = false;
 
@@ -248,6 +268,7 @@ public partial class MainWindow : Window
         LogoutButton.IsEnabled = true;
         LoginButton.IsVisible = true;
         LoginButton.IsEnabled = true;
+#endif
     }
 
     private async void OnManuelSyncClick(object? sender, RoutedEventArgs e)

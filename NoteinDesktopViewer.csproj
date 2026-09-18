@@ -4,6 +4,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Set to true to build without Google Drive support -->
+    <DisableGoogleDrive Condition="'$(DisableGoogleDrive)' == ''">false</DisableGoogleDrive>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(DisableGoogleDrive)' == 'true'">
+    <DefineConstants>$(DefineConstants);DISABLE_GOOGLE_DRIVE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -16,7 +22,6 @@
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Google.Apis.Drive.v3" Version="1.76.0.4261" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="PdfPig.Rendering.Skia" Version="0.1.16.4" />
@@ -24,7 +29,11 @@
     <PackageReference Include="SkiaSharp" Version="4.152.1" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(DisableGoogleDrive)' != 'true'">
+    <PackageReference Include="Google.Apis.Drive.v3" Version="1.76.0.4261" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DisableGoogleDrive)' != 'true'">
     <None Update="client_secrets.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -34,9 +34,7 @@
             <Grid ColumnDefinitions="Auto,*,Auto">
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
-                    <ComboBox x:Name="SourceComboBox" SelectedIndex="0" SelectionChanged="OnSourceChanged">
-                        <ComboBoxItem Content="Google Drive" />
-                        <ComboBoxItem Content="Local Folder" />
+                    <ComboBox x:Name="SourceComboBox" SelectionChanged="OnSourceChanged">
                     </ComboBox>
 
                     <Button x:Name="LoginButton" Content="Sign in with Google" Click="OnLoginClick" />

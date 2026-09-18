@@ -57,5 +57,18 @@ dotnet build
 dotnet run
 ```
 
+### Disabling Google Drive Support
+
+If you do not want to use Google Drive and prefer to compile the application without its dependencies, you can use the `DisableGoogleDrive` build flag.
+
+> [!NOTE]
+> All pre-compiled builds provided in the **GitHub Releases** come with Google Drive support **deactivated**. This is because having support for it in the releases would force me to doxx myself.
+
+To build the application without Google Drive support via the CLI, append `/p:DisableGoogleDrive=true` to your build or publish command:
+
+```bash
+dotnet build /p:DisableGoogleDrive=true
+```
+
 
 <img width="2404" height="1668" alt="NoteinDesktopViewerScreenshot" src="https://github.com/user-attachments/assets/93579f05-87b6-4e45-93fe-87ffe5e4d30a" />

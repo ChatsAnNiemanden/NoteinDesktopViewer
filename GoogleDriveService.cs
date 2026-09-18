@@ -1,3 +1,4 @@
+#if !DISABLE_GOOGLE_DRIVE
 using Google.Apis.Auth.OAuth2;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
@@ -266,3 +267,4 @@ public class GoogleDriveService : INoteSourceService
             : $"Converted {converted} file(s) to PDF, {skipped} already up to date.");
     }
 }
+#endif
