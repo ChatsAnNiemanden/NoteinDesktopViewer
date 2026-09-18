@@ -1,0 +1,36 @@
+<Window
+    x:Class="NoteinDesktopViewer.MainWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="NoteinDesktopViewer"
+    Width="600"
+    Height="500"
+    d:DesignHeight="500"
+    d:DesignWidth="600"
+    mc:Ignorable="d">
+
+    <DockPanel Margin="16">
+        <!-- Top bar: login/logout controls -->
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
+            <Button x:Name="LoginButton" Content="Sign in with Google" Click="OnLoginClick" />
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Not signed in" />
+            <Button x:Name="LogoutButton" Content="Sign out" Click="OnLogoutClick" IsVisible="False" />
+        </StackPanel>
+
+        <!-- Error message -->
+        <TextBlock x:Name="ErrorText" DockPanel.Dock="Top" Foreground="Red"
+                   TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="False" />
+
+        <!-- Loading indicator -->
+        <StackPanel x:Name="LoadingPanel" DockPanel.Dock="Top" Orientation="Horizontal"
+                    Spacing="8" Margin="0,0,0,8" IsVisible="False">
+            <ProgressBar IsIndeterminate="True" Width="120" Height="16" />
+            <TextBlock VerticalAlignment="Center" Text="Loading files..." />
+        </StackPanel>
+
+        <!-- File list -->
+        <ListBox x:Name="FileListBox" />
+    </DockPanel>
+</Window>
