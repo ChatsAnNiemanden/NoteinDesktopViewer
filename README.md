@@ -29,3 +29,6 @@ To use this application, you must build it yourself and provide your own Google 
 4. Download the JSON credentials and save them as `client_secrets.json` in the project root directory.
 5. Add yourself as a test user. 
 6. Build and run the project.
+
+
+<img width="2404" height="1668" alt="NoteinDesktopViewerScreenshot" src="https://github.com/user-attachments/assets/93579f05-87b6-4e45-93fe-87ffe5e4d30a" />
