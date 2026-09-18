@@ -30,7 +30,21 @@
             <TextBlock x:Name="LoadingText" VerticalAlignment="Center" Text="Loading..." />
         </StackPanel>
 
-        <!-- File list -->
-        <ListBox x:Name="FileListBox" />
+        <!-- Content area: file list + conversion log -->
+        <Grid RowDefinitions="*,Auto,*">
+            <!-- File list -->
+            <ListBox x:Name="FileListBox" Grid.Row="0" />
+
+            <!-- Splitter label -->
+            <TextBlock Grid.Row="1" Text="Conversion Log" FontWeight="Bold"
+                       Margin="0,8,0,4" IsVisible="{Binding #LogBox.IsVisible}" />
+
+            <!-- Log output -->
+            <TextBox x:Name="LogBox" Grid.Row="2"
+                     IsReadOnly="True" AcceptsReturn="True"
+                     TextWrapping="Wrap"
+                     FontFamily="Consolas,Courier New,monospace" FontSize="12"
+                     IsVisible="False" />
+        </Grid>
     </DockPanel>
 </Window>

@@ -2,7 +2,9 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using System;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace NoteinDesktopViewer;
@@ -61,6 +63,8 @@ public partial class MainWindow : Window
         }
 
         FileListBox.ItemsSource = null;
+        LogBox.Text = "";
+        LogBox.IsVisible = false;
         StatusText.Text = "Not signed in";
         LogoutButton.IsVisible = false;
         LogoutButton.IsEnabled = true;
@@ -72,6 +76,8 @@ public partial class MainWindow : Window
     {
         LoadingPanel.IsVisible = true;
         ErrorText.IsVisible = false;
+        LogBox.Text = "";
+        LogBox.IsVisible = true;
 
         try
         {
@@ -80,6 +86,9 @@ public partial class MainWindow : Window
                 Dispatcher.UIThread.Post(() => LoadingText.Text = msg));
 
             var files = await _driveService.SyncFilesAsync(progress);
+
+            // Convert downloaded notes to PDFs, capturing Console output to the log box
+            await ConvertWithLogCaptureAsync(progress);
 
             if (files.Count == 0)
             {
@@ -98,6 +107,76 @@ public partial class MainWindow : Window
         finally
         {
             LoadingPanel.IsVisible = false;
+        }
+    }
+
+    private async Task ConvertWithLogCaptureAsync(IProgress<string> progress)
+    {
+        // Redirect Console.Out and Console.Error to capture NoteinToPdf output
+        var originalOut = Console.Out;
+        var originalErr = Console.Error;
+        var logWriter = new UITextWriter(line =>
+            Dispatcher.UIThread.Post(() => AppendLog(line)));
+
+        Console.SetOut(logWriter);
+        Console.SetError(logWriter);
+        try
+        {
+            await GoogleDriveService.ConvertAllToPdfAsync(progress);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+            Console.SetError(originalErr);
+        }
+    }
+
+    private void AppendLog(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        LogBox.Text += text + "\n";
+        // Auto-scroll to end
+        LogBox.CaretIndex = LogBox.Text?.Length ?? 0;
+    }
+
+    /// <summary>
+    /// A TextWriter that forwards complete lines to a callback action.
+    /// </summary>
+    private class UITextWriter : TextWriter
+    {
+        private readonly Action<string> _onLine;
+        private readonly StringBuilder _buffer = new();
+
+        public UITextWriter(Action<string> onLine) => _onLine = onLine;
+
+        public override Encoding Encoding => Encoding.UTF8;
+
+        public override void Write(char value)
+        {
+            if (value == '\n')
+                FlushBuffer();
+            else if (value != '\r')
+                _buffer.Append(value);
+        }
+
+        public override void Write(string? value)
+        {
+            if (value == null) return;
+            foreach (var ch in value)
+                Write(ch);
+        }
+
+        public override void WriteLine(string? value)
+        {
+            if (value != null) _buffer.Append(value);
+            FlushBuffer();
+        }
+
+        private void FlushBuffer()
+        {
+            var line = _buffer.ToString();
+            _buffer.Clear();
+            _onLine(line);
         }
     }
 }

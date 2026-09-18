@@ -22,6 +22,10 @@ public class GoogleDriveService
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "NoteinDesktopViewer", "NoteInDataSync");
 
+    public static readonly string LocalPdfFolder = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "NoteinDesktopViewer", "PDFs");
+
     private UserCredential? _credential;
     private DriveService? _driveService;
 
@@ -198,5 +202,57 @@ public class GoogleDriveService
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), TokenFolder);
         if (Directory.Exists(tokenPath))
             Directory.Delete(tokenPath, true);
+    }
+
+    /// <summary>
+    /// Converts all downloaded note files in the sync folder to PDFs.
+    /// Skips files that already have a corresponding up-to-date PDF.
+    /// </summary>
+    public static async Task ConvertAllToPdfAsync(IProgress<string>? progress = null)
+    {
+        Directory.CreateDirectory(LocalPdfFolder);
+
+        var noteFiles = Directory.GetFiles(LocalSyncFolder)
+            .Select(f => new FileInfo(f))
+            .ToList();
+
+        if (noteFiles.Count == 0)
+        {
+            progress?.Report("No files to convert.");
+            return;
+        }
+
+        int converted = 0;
+        int skipped = 0;
+
+        for (int i = 0; i < noteFiles.Count; i++)
+        {
+            var noteFile = noteFiles[i];
+            var pdfName = Path.GetFileNameWithoutExtension(noteFile.Name) + ".pdf";
+            var pdfPath = Path.Combine(LocalPdfFolder, pdfName);
+
+            // Skip if PDF already exists and is newer than the source file
+            if (File.Exists(pdfPath) && File.GetLastWriteTimeUtc(pdfPath) >= noteFile.LastWriteTimeUtc)
+            {
+                skipped++;
+                continue;
+            }
+
+            progress?.Report($"Converting {i + 1}/{noteFiles.Count}: {noteFile.Name}");
+
+            try
+            {
+                await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath));
+                converted++;
+            }
+            catch (Exception ex)
+            {
+                progress?.Report($"Failed to convert {noteFile.Name}: {ex.Message}");
+            }
+        }
+
+        progress?.Report(converted == 0
+            ? $"All {noteFiles.Count} PDFs up to date."
+            : $"Converted {converted} file(s) to PDF, {skipped} already up to date.");
     }
 }
