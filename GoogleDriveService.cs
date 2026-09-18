@@ -16,13 +16,13 @@ public class GoogleDriveService
     private static readonly string[] Scopes = { DriveService.Scope.DriveReadonly };
     private const string ApplicationName = "NoteinDesktopViewer";
     private const string TokenFolder = "NoteinDesktopViewer_Tokens";
-    private const string TargetFolderName = "NoteInDataSync";
+    public string TargetFolderName { get; set; } = "NoteInDataSync";
 
-    public static readonly string LocalSyncFolder = Path.Combine(
+    public string LocalSyncFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "NoteinDesktopViewer", "NoteInDataSync");
+        "NoteinDesktopViewer", TargetFolderName);
 
-    public static readonly string LocalPdfFolder = Path.Combine(
+    public string LocalPdfFolder => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "NoteinDesktopViewer", "PDFs");
 
@@ -218,7 +218,7 @@ public class GoogleDriveService
     /// Converts all downloaded note files in the sync folder to PDFs.
     /// Skips files that already have a corresponding up-to-date PDF.
     /// </summary>
-    public static async Task ConvertAllToPdfAsync(IProgress<string>? progress = null)
+    public async Task ConvertAllToPdfAsync(IProgress<string>? progress = null)
     {
         Directory.CreateDirectory(LocalPdfFolder);
 

@@ -47,6 +47,13 @@ public partial class MainWindow : Window
                 var email = await _driveService.LoginAsync();
                 StatusText.Text = email;
                 LogoutButton.IsEnabled = true;
+                var dialog = new FolderInputDialog();
+                var result = await dialog.ShowDialog<string>(this);
+                if (!string.IsNullOrWhiteSpace(result))
+                {
+                    _driveService.TargetFolderName = result;
+                }
+
                 await SyncAndDisplayFilesAsync();
             }
             catch (Exception ex)
@@ -79,6 +86,13 @@ public partial class MainWindow : Window
             StatusText.Text = email;
             LoginButton.IsVisible = false;
             LogoutButton.IsVisible = true;
+
+            var dialog = new FolderInputDialog();
+            var result = await dialog.ShowDialog<string>(this);
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                _driveService.TargetFolderName = result;
+            }
 
             await SyncAndDisplayFilesAsync();
         }
@@ -160,8 +174,8 @@ public partial class MainWindow : Window
                 {
                     var pdfName = Path.GetFileNameWithoutExtension(f.Name) + ".pdf";
                     var pngName = Path.GetFileNameWithoutExtension(f.Name) + ".png";
-                    var pdfPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pdfName);
-                    var pngPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pngName);
+                    var pdfPath = Path.Combine(_driveService.LocalPdfFolder, pdfName);
+                    var pngPath = Path.Combine(_driveService.LocalPdfFolder, pngName);
                     
                     bool hasPdf = File.Exists(pdfPath);
                     
@@ -207,7 +221,7 @@ public partial class MainWindow : Window
         var fileName = selectedItem.FileName;
 
         var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
-        var pdfPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pdfName);
+        var pdfPath = Path.Combine(_driveService.LocalPdfFolder, pdfName);
 
         if (!File.Exists(pdfPath))
         {
@@ -291,7 +305,7 @@ public partial class MainWindow : Window
         Console.SetError(logWriter);
         try
         {
-            await GoogleDriveService.ConvertAllToPdfAsync(progress);
+            await _driveService.ConvertAllToPdfAsync(progress);
         }
         finally
         {
