@@ -7,7 +7,7 @@
 
 ## About
 
-NoteinDesktopViewer is a basic desktop viewer for Notein notes. 
+NoteinDesktopViewer is a basic desktop viewer for Notein notes. It supports syncing your notes directly from **Google Drive** or reading them from a **Local Folder** on your computer.
 
 **Core philosophy:** This application will **always remain a basic viewer**. It will never receive features to edit notes or perform other modifications.
 
@@ -21,14 +21,16 @@ It currently supports the features of Notein **v1.3.210.0** that I personally us
 
 ## Setup & Building
 
-This project is built using .NET and Avalonia UI. To use this application, you must build it yourself and provide your own Google Drive API credentials.
+This project is built using .NET and Avalonia UI. To use this application, you must build it yourself. 
 
 ### Prerequisites
 
 - [.NET SDK](https://dotnet.microsoft.com/download) (check the `.csproj` for the exact version)
 - An IDE like [Visual Studio](https://visualstudio.microsoft.com/), [Rider](https://www.jetbrains.com/rider/), or [VS Code](https://code.visualstudio.com/) (with Avalonia extensions recommended).
 
-### Google Drive API Setup
+### Google Drive API Setup (Optional)
+
+If you want to sync your notes directly from Google Drive, you will need to provide your own API credentials. If you only plan to use the **Local Folder** source, you can skip this section.
 
 1. Create a Google Cloud account.
 2. Enable the Google Drive API for your project.
