@@ -6,78 +6,106 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:local="clr-namespace:NoteinDesktopViewer"
     Title="NoteinDesktopViewer"
-    Width="1100"
-    Height="700"
-    d:DesignHeight="700"
-    d:DesignWidth="1100"
+    Width="1200"
+    Height="800"
+    WindowStartupLocation="CenterScreen"
+    d:DesignHeight="800"
+    d:DesignWidth="1200"
     mc:Ignorable="d">
 
-    <DockPanel Margin="16">
-        <!-- Top bar: login/logout controls -->
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,12">
-            <Button x:Name="LoginButton" Content="Sign in with Google" Click="OnLoginClick" />
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Not signed in" />
-            <Button x:Name="LogoutButton" Content="Sign out" Click="OnLogoutClick" IsVisible="False" />
-            <Button x:Name="ManuelSyncButton" Content="Sync" Click="OnManuelSyncClick" IsEnabled="False"/>
-        </StackPanel>
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Margin" Value="4,2" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+    </Window.Styles>
 
-        <!-- Error message -->
-        <TextBlock x:Name="ErrorText" DockPanel.Dock="Top" Foreground="Red"
-                   TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="False" />
+    <DockPanel>
+        <!-- Top Toolbar -->
+        <Border DockPanel.Dock="Top" 
+                Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                BorderThickness="0,0,0,1"
+                Padding="16,10">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <Button x:Name="LoginButton" Content="Sign in with Google" Click="OnLoginClick" />
+                    <Button x:Name="ManuelSyncButton" Content="Sync Notes" Click="OnManuelSyncClick" IsEnabled="False"/>
+                    <Button x:Name="LogoutButton" Content="Sign out" Click="OnLogoutClick" IsVisible="False" />
+                    <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Not signed in" Opacity="0.7" Margin="8,0,0,0"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                    <Button Content="Toggle Theme" Click="OnThemeToggleClick" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
-        <!-- Loading / sync progress indicator -->
-        <StackPanel x:Name="LoadingPanel" DockPanel.Dock="Top" Orientation="Horizontal"
-                    Spacing="8" Margin="0,0,0,8" IsVisible="False">
-            <ProgressBar IsIndeterminate="True" Width="120" Height="16" />
-            <TextBlock x:Name="LoadingText" VerticalAlignment="Center" Text="Loading..." />
-        </StackPanel>
+        <!-- Progress and Errors -->
+        <Border DockPanel.Dock="Top" x:Name="LoadingPanel" Background="{DynamicResource SystemControlBackgroundAccentBrush}" 
+                IsVisible="False" Padding="12,6">
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="100" Height="4" Foreground="White" Background="Transparent" />
+                <TextBlock x:Name="LoadingText" VerticalAlignment="Center" Text="Loading..." Foreground="White" FontWeight="SemiBold"/>
+            </StackPanel>
+        </Border>
 
-        <!-- Main content: left panel (list + log) | right panel (PDF viewer) -->
-        <Grid ColumnDefinitions="300,8,*">
-            <!-- Left panel -->
-            <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto">
-                <!-- File list -->
-                <ListBox x:Name="FileListBox" Grid.Row="0"
-                         SelectionChanged="OnFileSelected">
+        <Border DockPanel.Dock="Top" IsVisible="{Binding #ErrorText.IsVisible}" Background="#FFF3CD" Padding="12,6">
+            <TextBlock x:Name="ErrorText" Foreground="#856404" TextWrapping="Wrap" HorizontalAlignment="Center" IsVisible="False" FontWeight="SemiBold" />
+        </Border>
+
+        <!-- Main Content -->
+        <Grid ColumnDefinitions="320,1,*">
+            
+            <!-- Left Sidebar -->
+            <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                <ListBox x:Name="FileListBox" Grid.Row="0" SelectionChanged="OnFileSelected" Background="Transparent" BorderThickness="0">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="local:FileItem">
                             <Panel>
-                                <Border Background="#44FF0000" IsVisible="{Binding !HasPdf}" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Panel Width="40" Height="50">
-                                        <Image Source="{Binding PreviewImage}" Stretch="Uniform" />
-                                        <TextBlock Text="⚠️" Foreground="Red" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasPdf}" />
-                                    </Panel>
-                                    <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Border Width="40" Height="50" CornerRadius="4" ClipToBounds="True" Background="{DynamicResource SystemControlBackgroundAltHighBrush}" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                        <Panel>
+                                            <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
+                                        </Panel>
+                                    </Border>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding FileName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="PDF missing" Foreground="#D9534F" FontSize="11" IsVisible="{Binding !HasPdf}" Margin="0,2,0,0" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Panel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
 
-                <!-- Splitter label -->
-                <TextBlock Grid.Row="1" Text="Conversion Log" FontWeight="Bold"
-                           Margin="0,8,0,4" IsVisible="{Binding #LogBox.IsVisible}" />
+                <TextBlock Grid.Row="1" Text="Activity Log" FontWeight="SemiBold" FontSize="12"
+                           Margin="12,8,12,4" IsVisible="{Binding #LogBox.IsVisible}" Opacity="0.6"/>
 
-                <!-- Log output -->
                 <TextBox x:Name="LogBox" Grid.Row="2"
                          IsReadOnly="True" AcceptsReturn="True"
-                         TextWrapping="Wrap" MaxHeight="150"
-                         FontFamily="Consolas,Courier New,monospace" FontSize="12"
+                         TextWrapping="Wrap" MaxHeight="120" Margin="8,0,8,8"
+                         FontFamily="Consolas,Courier New,monospace" FontSize="11"
+                         Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                         BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
                          IsVisible="False" />
             </Grid>
 
             <!-- Splitter -->
-            <GridSplitter Grid.Column="1" ResizeDirection="Columns"
-                          Background="Gray" Width="4" />
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Width="1" />
 
-            <!-- Right panel: PDF viewer -->
-            <Grid Grid.Column="2">
+            <!-- Right Panel (PDF Viewer) -->
+            <Panel Grid.Column="2" Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
                 <TextBlock x:Name="PdfPlaceholder"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
-                           Text="Select a file to view its PDF" Opacity="0.5" />
+                           Text="Select a note to view" Opacity="0.4" FontSize="16" />
                 <NativeWebView x:Name="PdfWebView" IsVisible="False" />
-            </Grid>
+            </Panel>
         </Grid>
     </DockPanel>
 </Window>

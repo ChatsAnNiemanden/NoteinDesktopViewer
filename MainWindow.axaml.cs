@@ -330,4 +330,20 @@ public partial class MainWindow : Window
             _onLine(line);
         }
     }
+
+    private void OnThemeToggleClick(object? sender, RoutedEventArgs e)
+    {
+        var app = Avalonia.Application.Current;
+        if (app is not null)
+        {
+            if (app.RequestedThemeVariant == Avalonia.Styling.ThemeVariant.Light)
+            {
+                app.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Dark;
+            }
+            else
+            {
+                app.RequestedThemeVariant = Avalonia.Styling.ThemeVariant.Light;
+            }
+        }
+    }
 }
