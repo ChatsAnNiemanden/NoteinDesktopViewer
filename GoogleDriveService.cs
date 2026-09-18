@@ -31,6 +31,16 @@ public class GoogleDriveService
 
     public bool IsLoggedIn => _credential != null;
 
+    public bool HasSavedToken
+    {
+        get
+        {
+            var tokenPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), TokenFolder);
+            return Directory.Exists(tokenPath) && Directory.EnumerateFiles(tokenPath).Any();
+        }
+    }
+
     /// <summary>
     /// Authenticates the user via Google OAuth2 (opens browser for consent).
     /// Returns the user's email address on success.

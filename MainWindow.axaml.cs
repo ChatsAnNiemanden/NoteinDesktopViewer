@@ -25,6 +25,40 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SyncOnStartupWhenLoggedIn();
+    }
+
+    private async void SyncOnStartupWhenLoggedIn()
+    {
+        if (_driveService.HasSavedToken)
+        {
+            LoginButton.IsVisible = false;
+            LogoutButton.IsVisible = true;
+            LogoutButton.IsEnabled = false; // Disable until loaded
+            LoadingPanel.IsVisible = true;
+            LoadingText.Text = "Signing in...";
+            StatusText.Text = "Signing in...";
+
+            try
+            {
+                var email = await _driveService.LoginAsync();
+                StatusText.Text = email;
+                LogoutButton.IsEnabled = true;
+                await SyncAndDisplayFilesAsync();
+            }
+            catch (Exception ex)
+            {
+                ErrorText.Text = $"Login failed: {ex.Message}";
+                ErrorText.IsVisible = true;
+                StatusText.Text = "Not signed in";
+                LoginButton.IsVisible = true;
+                LogoutButton.IsVisible = false;
+            }
+            finally
+            {
+                LoadingPanel.IsVisible = false;
+            }
+        }
     }
 
     private async void OnLoginClick(object? sender, RoutedEventArgs e)
