@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:local="clr-namespace:NoteinDesktopViewer"
     Title="NoteinDesktopViewer"
     Width="1100"
     Height="700"
@@ -36,7 +37,16 @@
             <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto">
                 <!-- File list -->
                 <ListBox x:Name="FileListBox" Grid.Row="0"
-                         SelectionChanged="OnFileSelected" />
+                         SelectionChanged="OnFileSelected">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="local:FileItem">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Image Source="{Binding PreviewImage}" Width="40" Height="50" Stretch="Uniform" />
+                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
 
                 <!-- Splitter label -->
                 <TextBlock Grid.Row="1" Text="Conversion Log" FontWeight="Bold"

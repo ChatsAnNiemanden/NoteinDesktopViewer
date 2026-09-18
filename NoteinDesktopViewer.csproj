@@ -18,7 +18,10 @@
     </PackageReference>
     <PackageReference Include="Google.Apis.Drive.v3" Version="1.76.0.4261" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
+    <PackageReference Include="PdfPig.Rendering.Skia" Version="0.1.16.4" />
     <PackageReference Include="PDFsharp" Version="6.2.4" />
+    <PackageReference Include="SkiaSharp" Version="4.152.1" />
   </ItemGroup>
 
   <ItemGroup>

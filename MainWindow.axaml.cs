@@ -2,12 +2,20 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Avalonia.Media.Imaging;
 
 namespace NoteinDesktopViewer;
+
+public class FileItem
+{
+    public string FileName { get; set; } = string.Empty;
+    public Bitmap? PreviewImage { get; set; }
+}
 
 public partial class MainWindow : Window
 {
@@ -94,11 +102,25 @@ public partial class MainWindow : Window
 
             if (files.Count == 0)
             {
-                FileListBox.ItemsSource = new[] { "(No files found in NoteInDataSync folder)" };
+                FileListBox.ItemsSource = new[] { new FileItem { FileName = "(No files found in NoteInDataSync folder)" } };
             }
             else
             {
-                FileListBox.ItemsSource = files.Select(f => f.Name).ToList();
+                var items = new List<FileItem>();
+                foreach (var f in files)
+                {
+                    var pngName = Path.GetFileNameWithoutExtension(f.Name) + ".png";
+                    var pngPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pngName);
+                    
+                    Bitmap? bmp = null;
+                    if (File.Exists(pngPath))
+                    {
+                        try { bmp = new Bitmap(pngPath); }
+                        catch { }
+                    }
+                    items.Add(new FileItem { FileName = f.Name, PreviewImage = bmp });
+                }
+                FileListBox.ItemsSource = items;
             }
         }
         catch (Exception ex)
@@ -114,8 +136,10 @@ public partial class MainWindow : Window
 
     private async void OnFileSelected(object? sender, SelectionChangedEventArgs e)
     {
-        if (FileListBox.SelectedItem is not string fileName)
+        if (FileListBox.SelectedItem is not FileItem selectedItem)
             return;
+
+        var fileName = selectedItem.FileName;
 
         var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
         var pdfPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pdfName);

@@ -729,6 +729,7 @@ namespace NoteinDesktopViewer
             }
 
             document.Save(outputPdf);
+            CreateNotePreview.CreatePreview(outputPdf);
         }
 
 
