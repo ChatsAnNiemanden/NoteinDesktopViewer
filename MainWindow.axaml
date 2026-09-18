@@ -76,7 +76,7 @@
                                         </Panel>
                                     </Border>
                                     <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding FileName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
                                         <TextBlock Text="PDF missing" Foreground="#D9534F" FontSize="11" IsVisible="{Binding !HasPdf}" Margin="0,2,0,0" />
                                     </StackPanel>
                                 </StackPanel>

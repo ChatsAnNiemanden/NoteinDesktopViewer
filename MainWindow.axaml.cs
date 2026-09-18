@@ -8,12 +8,14 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using System.Text.RegularExpressions;
 
 namespace NoteinDesktopViewer;
 
 public class FileItem
 {
     public string FileName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
     public Bitmap? PreviewImage { get; set; }
     public bool HasPdf { get; set; }
 }
@@ -145,7 +147,11 @@ public partial class MainWindow : Window
 
             if (files.Count == 0)
             {
-                FileListBox.ItemsSource = new[] { new FileItem { FileName = "(No files found in NoteInDataSync folder)", HasPdf = true } };
+                FileListBox.ItemsSource = new[] { new FileItem { 
+                    FileName = "(No files found in NoteInDataSync folder)", 
+                    DisplayName = "(No files found in NoteInDataSync folder)",
+                    HasPdf = true 
+                } };
             }
             else
             {
@@ -165,7 +171,12 @@ public partial class MainWindow : Window
                         try { bmp = new Bitmap(pngPath); }
                         catch { }
                     }
-                    items.Add(new FileItem { FileName = f.Name, PreviewImage = bmp, HasPdf = hasPdf });
+                    items.Add(new FileItem { 
+                        FileName = f.Name, 
+                        DisplayName = FormatDisplayName(f.Name),
+                        PreviewImage = bmp, 
+                        HasPdf = hasPdf 
+                    });
                 }
                 FileListBox.ItemsSource = items;
             }
@@ -181,6 +192,13 @@ public partial class MainWindow : Window
         }
     }
 
+    private static string FormatDisplayName(string name)
+    {
+        var nameWithoutExt = Path.GetFileNameWithoutExtension(name);
+        var regex = new Regex(@"(?i)[_-]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
+        return regex.Replace(nameWithoutExt, "");
+    }
+
     private async void OnFileSelected(object? sender, SelectionChangedEventArgs e)
     {
         if (FileListBox.SelectedItem is not FileItem selectedItem)
@@ -194,7 +212,7 @@ public partial class MainWindow : Window
         if (!File.Exists(pdfPath))
         {
             PdfWebView.IsVisible = false;
-            PdfPlaceholder.Text = $"No PDF found for {fileName}";
+            PdfPlaceholder.Text = $"No PDF found for {selectedItem.DisplayName}";
             PdfPlaceholder.IsVisible = true;
             return;
         }
