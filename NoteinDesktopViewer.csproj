@@ -13,7 +13,7 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PublishSingleFile>true</PublishSingleFile>
+    <PublishSingleFile Condition="'$(RuntimeIdentifier)' != 'linux-x64'">true</PublishSingleFile>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
 
