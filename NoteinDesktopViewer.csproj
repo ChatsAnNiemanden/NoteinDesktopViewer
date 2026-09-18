@@ -1,11 +1,25 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Only use Native AOT when Google Drive is disabled -->
+    <PublishAot Condition="'$(DisableGoogleDrive)' == 'true'">true</PublishAot>
+    <PublishAot Condition="'$(DisableGoogleDrive)' != 'true'">false</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
     <!-- Set to true to build without Google Drive support -->
     <DisableGoogleDrive Condition="'$(DisableGoogleDrive)' == ''">false</DisableGoogleDrive>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(DisableGoogleDrive)' == 'true'">

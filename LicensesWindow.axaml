@@ -3,6 +3,7 @@
         x:Class="NoteinDesktopViewer.LicensesWindow"
         Title="Open Source Licenses"
         Width="600" Height="500"
+        x:CompileBindings="True"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource SystemControlPageBackgroundChromeLowBrush}">
     <Grid RowDefinitions="Auto,*">

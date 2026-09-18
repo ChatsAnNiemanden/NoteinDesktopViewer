@@ -8,6 +8,7 @@
     Title="NoteinDesktopViewer"
     Width="1200"
     Height="800"
+    x:CompileBindings="True"
     WindowStartupLocation="CenterScreen"
     d:DesignHeight="800"
     d:DesignWidth="1200"

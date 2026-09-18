@@ -3,6 +3,7 @@
         x:Class="NoteinDesktopViewer.FolderInputDialog"
         Title="Target Folder"
         Width="400" Height="150"
+        x:CompileBindings="True"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
     <StackPanel Margin="20" Spacing="10">
