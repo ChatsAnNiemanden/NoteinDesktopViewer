@@ -21,14 +21,39 @@ It currently supports the features of Notein **v1.3.210.0** that I personally us
 
 ## Setup & Building
 
-To use this application, you must build it yourself and provide your own Google Drive API credentials.
+This project is built using .NET and Avalonia UI. To use this application, you must build it yourself and provide your own Google Drive API credentials.
+
+### Prerequisites
+
+- [.NET SDK](https://dotnet.microsoft.com/download) (check the `.csproj` for the exact version)
+- An IDE like [Visual Studio](https://visualstudio.microsoft.com/), [Rider](https://www.jetbrains.com/rider/), or [VS Code](https://code.visualstudio.com/) (with Avalonia extensions recommended).
+
+### Google Drive API Setup
 
 1. Create a Google Cloud account.
 2. Enable the Google Drive API for your project.
-3. Create OAuth 2.0 Client IDs credentials.
+3. Create OAuth 2.0 Client IDs credentials (Desktop app).
 4. Download the JSON credentials and save them as `client_secrets.json` in the project root directory.
-5. Add yourself as a test user. 
-6. Build and run the project.
+5. Add yourself as a test user in the OAuth consent screen.
+
+### Build and Run
+
+You can build and run the project using the .NET CLI or your preferred IDE.
+
+**Using .NET CLI:**
+
+Open a terminal in the project root directory and run:
+
+```bash
+# Restore dependencies
+dotnet restore
+
+# Build the project
+dotnet build
+
+# Run the application
+dotnet run
+```
 
 
 <img width="2404" height="1668" alt="NoteinDesktopViewerScreenshot" src="https://github.com/user-attachments/assets/93579f05-87b6-4e45-93fe-87ffe5e4d30a" />
