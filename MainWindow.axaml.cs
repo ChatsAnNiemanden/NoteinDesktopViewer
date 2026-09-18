@@ -159,9 +159,12 @@ public partial class MainWindow : Window
             var base64 = Convert.ToBase64String(pdfBytes);
             var html = BuildPdfViewerHtml(base64);
 
+            var tempHtmlPath = Path.Combine(Path.GetTempPath(), "notein_viewer.html");
+            File.WriteAllText(tempHtmlPath, html);
+
             PdfPlaceholder.IsVisible = false;
             PdfWebView.IsVisible = true;
-            PdfWebView.NavigateToString(html);
+            PdfWebView.Navigate(new Uri($"file:///{tempHtmlPath.Replace('\\', '/')}"));
         }
         catch (Exception ex)
         {
@@ -191,8 +194,8 @@ public partial class MainWindow : Window
                 import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 
-                const pdfData = Uint8Array.from(atob('{{base64Pdf}}'), c => c.charCodeAt(0));
-                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                const pdfUrl = 'data:application/pdf;base64,{{base64Pdf}}';
+                const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
                 const viewer = document.getElementById('viewer');
 
                 for (let i = 1; i <= pdf.numPages; i++) {
