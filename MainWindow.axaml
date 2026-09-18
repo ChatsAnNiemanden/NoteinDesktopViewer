@@ -34,7 +34,13 @@
             <Grid ColumnDefinitions="Auto,*,Auto">
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <ComboBox x:Name="SourceComboBox" SelectedIndex="0" SelectionChanged="OnSourceChanged">
+                        <ComboBoxItem Content="Google Drive" />
+                        <ComboBoxItem Content="Local Folder" />
+                    </ComboBox>
+
                     <Button x:Name="LoginButton" Content="Sign in with Google" Click="OnLoginClick" />
+                    <Button x:Name="SelectLocalFolderButton" Content="Select Folder" Click="OnSelectLocalFolderClick" IsVisible="False" />
                     <Button x:Name="ManuelSyncButton" Content="Sync Notes" Click="OnManuelSyncClick" IsEnabled="False"/>
                     <Button x:Name="LogoutButton" Content="Sign out" Click="OnLogoutClick" IsVisible="False" />
                     <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Not signed in" Opacity="0.7" Margin="8,0,0,0"/>

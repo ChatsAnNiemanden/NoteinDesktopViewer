@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 
 namespace NoteinDesktopViewer;
 
-public class GoogleDriveService
+public class GoogleDriveService : INoteSourceService
 {
     private static readonly string[] Scopes = { DriveService.Scope.DriveReadonly };
     private const string ApplicationName = "NoteinDesktopViewer";

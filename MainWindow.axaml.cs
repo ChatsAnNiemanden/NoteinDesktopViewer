@@ -23,11 +23,123 @@ public class FileItem
 public partial class MainWindow : Window
 {
     private readonly GoogleDriveService _driveService = new();
+    private readonly LocalFolderService _localService = new();
+    private INoteSourceService _activeService = null!;
+    private readonly AppSettings _settings;
 
     public MainWindow()
     {
+        _settings = AppSettings.Load();
         InitializeComponent();
-        SyncOnStartupWhenLoggedIn();
+        
+        if (!string.IsNullOrEmpty(_settings.LastLocalFolder))
+        {
+            _localService.SourceFolder = _settings.LastLocalFolder;
+        }
+        if (!string.IsNullOrEmpty(_settings.GoogleDriveTargetFolder))
+        {
+            _driveService.TargetFolderName = _settings.GoogleDriveTargetFolder;
+        }
+
+        if (SourceComboBox.SelectedIndex == _settings.LastSourceIndex)
+        {
+            UpdateSourceUI();
+        }
+        else
+        {
+            SourceComboBox.SelectedIndex = _settings.LastSourceIndex;
+        }
+    }
+
+    private void OnSourceChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        UpdateSourceUI();
+        
+        if (_settings != null && SourceComboBox != null)
+        {
+            _settings.LastSourceIndex = SourceComboBox.SelectedIndex;
+            _settings.Save();
+        }
+    }
+
+    private void UpdateSourceUI()
+    {
+        if (SourceComboBox == null) return;
+        
+        FileListBox.ItemsSource = null;
+        LogBox.Text = "";
+        LogBox.IsVisible = false;
+        PdfWebView.IsVisible = false;
+        PdfPlaceholder.IsVisible = true;
+        
+        if (SourceComboBox.SelectedIndex == 0) // Google Drive
+        {
+            _activeService = _driveService;
+            SelectLocalFolderButton.IsVisible = false;
+            
+            if (_driveService.IsLoggedIn)
+            {
+                LoginButton.IsVisible = false;
+                LogoutButton.IsVisible = true;
+                ManuelSyncButton.IsEnabled = true;
+                StatusText.Text = "Signed in to Google Drive";
+                var _ = SyncAndDisplayFilesAsync();
+            }
+            else if (_driveService.HasSavedToken)
+            {
+                SyncOnStartupWhenLoggedIn();
+            }
+            else
+            {
+                LoginButton.IsVisible = true;
+                LogoutButton.IsVisible = false;
+                ManuelSyncButton.IsEnabled = false;
+                StatusText.Text = "Not signed in";
+            }
+        }
+        else // Local Folder
+        {
+            _activeService = _localService;
+            LoginButton.IsVisible = false;
+            LogoutButton.IsVisible = false;
+            SelectLocalFolderButton.IsVisible = true;
+            
+            if (string.IsNullOrEmpty(_localService.SourceFolder))
+            {
+                ManuelSyncButton.IsEnabled = false;
+                StatusText.Text = "No folder selected";
+            }
+            else
+            {
+                ManuelSyncButton.IsEnabled = true;
+                StatusText.Text = _localService.SourceFolder;
+                var _ = SyncAndDisplayFilesAsync();
+            }
+        }
+    }
+
+    private async void OnSelectLocalFolderClick(object? sender, RoutedEventArgs e)
+    {
+        var folders = await StorageProvider.OpenFolderPickerAsync(new Avalonia.Platform.Storage.FolderPickerOpenOptions
+        {
+            Title = "Select Notein Folder",
+            AllowMultiple = false
+        });
+
+        if (folders != null && folders.Count > 0)
+        {
+            _localService.SourceFolder = folders[0].Path.LocalPath;
+            StatusText.Text = _localService.SourceFolder;
+            ManuelSyncButton.IsEnabled = true;
+            
+            if (_settings != null)
+            {
+                _settings.LastLocalFolder = _localService.SourceFolder;
+                _settings.Save();
+            }
+            
+            await SyncAndDisplayFilesAsync();
+        }
     }
 
     private async void SyncOnStartupWhenLoggedIn()
@@ -47,14 +159,11 @@ public partial class MainWindow : Window
                 var email = await _driveService.LoginAsync();
                 StatusText.Text = email;
                 LogoutButton.IsEnabled = true;
-                var dialog = new FolderInputDialog();
-                var result = await dialog.ShowDialog<string>(this);
-                if (!string.IsNullOrWhiteSpace(result))
-                {
-                    _driveService.TargetFolderName = result;
-                }
 
-                await SyncAndDisplayFilesAsync();
+                if (_activeService == _driveService)
+                {
+                    await SyncAndDisplayFilesAsync();
+                }
             }
             catch (Exception ex)
             {
@@ -92,9 +201,14 @@ public partial class MainWindow : Window
             if (!string.IsNullOrWhiteSpace(result))
             {
                 _driveService.TargetFolderName = result;
+                _settings.GoogleDriveTargetFolder = result;
+                _settings.Save();
             }
 
-            await SyncAndDisplayFilesAsync();
+            if (_activeService == _driveService)
+            {
+                await SyncAndDisplayFilesAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -154,7 +268,7 @@ public partial class MainWindow : Window
             var progress = new Progress<string>(msg =>
                 Dispatcher.UIThread.Post(() => LoadingText.Text = msg));
 
-            var files = await _driveService.SyncFilesAsync(progress);
+            var files = await _activeService.SyncFilesAsync(progress);
 
             // Convert downloaded notes to PDFs, capturing Console output to the log box
             await ConvertWithLogCaptureAsync(progress);
@@ -162,8 +276,8 @@ public partial class MainWindow : Window
             if (files.Count == 0)
             {
                 FileListBox.ItemsSource = new[] { new FileItem { 
-                    FileName = "(No files found in NoteInDataSync folder)", 
-                    DisplayName = "(No files found in NoteInDataSync folder)",
+                    FileName = "(No files found)", 
+                    DisplayName = "(No files found in source)",
                     HasPdf = true 
                 } };
             }
@@ -174,8 +288,8 @@ public partial class MainWindow : Window
                 {
                     var pdfName = Path.GetFileNameWithoutExtension(f.Name) + ".pdf";
                     var pngName = Path.GetFileNameWithoutExtension(f.Name) + ".png";
-                    var pdfPath = Path.Combine(_driveService.LocalPdfFolder, pdfName);
-                    var pngPath = Path.Combine(_driveService.LocalPdfFolder, pngName);
+                    var pdfPath = Path.Combine(_activeService.LocalPdfFolder, pdfName);
+                    var pngPath = Path.Combine(_activeService.LocalPdfFolder, pngName);
                     
                     bool hasPdf = File.Exists(pdfPath);
                     
@@ -218,10 +332,12 @@ public partial class MainWindow : Window
         if (FileListBox.SelectedItem is not FileItem selectedItem)
             return;
 
+        if (selectedItem.FileName == "(No files found)") return;
+
         var fileName = selectedItem.FileName;
 
         var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
-        var pdfPath = Path.Combine(_driveService.LocalPdfFolder, pdfName);
+        var pdfPath = Path.Combine(_activeService.LocalPdfFolder, pdfName);
 
         if (!File.Exists(pdfPath))
         {
@@ -305,7 +421,7 @@ public partial class MainWindow : Window
         Console.SetError(logWriter);
         try
         {
-            await _driveService.ConvertAllToPdfAsync(progress);
+            await _activeService.ConvertAllToPdfAsync(progress);
         }
         finally
         {
