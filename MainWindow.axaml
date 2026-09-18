@@ -23,11 +23,11 @@
         <TextBlock x:Name="ErrorText" DockPanel.Dock="Top" Foreground="Red"
                    TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="False" />
 
-        <!-- Loading indicator -->
+        <!-- Loading / sync progress indicator -->
         <StackPanel x:Name="LoadingPanel" DockPanel.Dock="Top" Orientation="Horizontal"
                     Spacing="8" Margin="0,0,0,8" IsVisible="False">
             <ProgressBar IsIndeterminate="True" Width="120" Height="16" />
-            <TextBlock VerticalAlignment="Center" Text="Loading files..." />
+            <TextBlock x:Name="LoadingText" VerticalAlignment="Center" Text="Loading..." />
         </StackPanel>
 
         <!-- File list -->

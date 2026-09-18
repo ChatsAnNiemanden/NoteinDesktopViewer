@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
         LoginButton.IsEnabled = false;
         ErrorText.IsVisible = false;
         LoadingPanel.IsVisible = true;
+        LoadingText.Text = "Signing in...";
         StatusText.Text = "Signing in...";
 
         try
@@ -29,7 +31,7 @@ public partial class MainWindow : Window
             LoginButton.IsVisible = false;
             LogoutButton.IsVisible = true;
 
-            await LoadFilesAsync();
+            await SyncAndDisplayFilesAsync();
         }
         catch (Exception ex)
         {
@@ -66,14 +68,18 @@ public partial class MainWindow : Window
         LoginButton.IsEnabled = true;
     }
 
-    private async Task LoadFilesAsync()
+    private async Task SyncAndDisplayFilesAsync()
     {
         LoadingPanel.IsVisible = true;
         ErrorText.IsVisible = false;
 
         try
         {
-            var files = await _driveService.ListNoteInDataSyncFilesAsync();
+            // Progress reporter updates the loading text on the UI thread
+            var progress = new Progress<string>(msg =>
+                Dispatcher.UIThread.Post(() => LoadingText.Text = msg));
+
+            var files = await _driveService.SyncFilesAsync(progress);
 
             if (files.Count == 0)
             {
@@ -86,7 +92,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ErrorText.Text = $"Failed to load files: {ex.Message}";
+            ErrorText.Text = $"Sync failed: {ex.Message}";
             ErrorText.IsVisible = true;
         }
         finally

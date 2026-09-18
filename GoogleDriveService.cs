@@ -18,6 +18,10 @@ public class GoogleDriveService
     private const string TokenFolder = "NoteinDesktopViewer_Tokens";
     private const string TargetFolderName = "NoteInDataSync";
 
+    public static readonly string LocalSyncFolder = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "NoteinDesktopViewer", "NoteInDataSync");
+
     private UserCredential? _credential;
     private DriveService? _driveService;
 
@@ -59,7 +63,8 @@ public class GoogleDriveService
     }
 
     /// <summary>
-    /// Lists all files inside the "NoteInDataSync" folder on the user's Drive.
+    /// Lists all files inside the "NoteInDataSync" folder on the user's Drive,
+    /// including their modifiedTime for sync comparison.
     /// </summary>
     public async Task<List<DriveFileInfo>> ListNoteInDataSyncFilesAsync()
     {
@@ -84,7 +89,7 @@ public class GoogleDriveService
         {
             var listRequest = _driveService.Files.List();
             listRequest.Q = $"'{folder.Id}' in parents and trashed = false";
-            listRequest.Fields = "nextPageToken, files(id, name)";
+            listRequest.Fields = "nextPageToken, files(id, name, modifiedTime)";
             listRequest.PageSize = 100;
             listRequest.PageToken = pageToken;
 
@@ -92,13 +97,86 @@ public class GoogleDriveService
             result.AddRange(fileResult.Files.Select(f => new DriveFileInfo
             {
                 Id = f.Id,
-                Name = f.Name
+                Name = f.Name,
+                ModifiedTime = f.ModifiedTimeDateTimeOffset?.DateTime
             }));
 
             pageToken = fileResult.NextPageToken;
         } while (!string.IsNullOrEmpty(pageToken));
 
         return result;
+    }
+
+    /// <summary>
+    /// Downloads a single file from Drive to the specified local path.
+    /// </summary>
+    public async Task DownloadFileAsync(string fileId, string destPath)
+    {
+        if (_driveService == null)
+            throw new InvalidOperationException("Not logged in.");
+
+        var dir = Path.GetDirectoryName(destPath);
+        if (dir != null)
+            Directory.CreateDirectory(dir);
+
+        using var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write);
+        var request = _driveService.Files.Get(fileId);
+        await request.DownloadAsync(fileStream);
+    }
+
+    /// <summary>
+    /// Syncs the NoteInDataSync folder: downloads new/modified files, skips unchanged ones.
+    /// Reports progress via the callback (e.g. "Downloading 3/12: notes.db").
+    /// Returns the list of all remote files.
+    /// </summary>
+    public async Task<List<DriveFileInfo>> SyncFilesAsync(IProgress<string>? progress = null)
+    {
+        progress?.Report("Checking for changes...");
+
+        var remoteFiles = await ListNoteInDataSyncFilesAsync();
+        if (remoteFiles.Count == 0)
+        {
+            progress?.Report("No files found in NoteInDataSync folder.");
+            return remoteFiles;
+        }
+
+        var metadata = await SyncMetadata.LoadAsync();
+        Directory.CreateDirectory(LocalSyncFolder);
+
+        int downloaded = 0;
+        int skipped = 0;
+
+        for (int i = 0; i < remoteFiles.Count; i++)
+        {
+            var file = remoteFiles[i];
+            var localPath = Path.Combine(LocalSyncFolder, file.Name);
+
+            if (!metadata.NeedsDownload(file.Id, file.ModifiedTime))
+            {
+                // Also check that the local file still exists
+                if (File.Exists(localPath))
+                {
+                    skipped++;
+                    continue;
+                }
+            }
+
+            progress?.Report($"Downloading {i + 1}/{remoteFiles.Count}: {file.Name}");
+            await DownloadFileAsync(file.Id, localPath);
+
+            if (file.ModifiedTime.HasValue)
+                metadata.UpdateEntry(file.Id, file.Name, file.ModifiedTime.Value);
+
+            downloaded++;
+        }
+
+        await metadata.SaveAsync();
+
+        progress?.Report(downloaded == 0
+            ? $"All {remoteFiles.Count} files up to date."
+            : $"Synced {downloaded} file(s), {skipped} already up to date.");
+
+        return remoteFiles;
     }
 
     /// <summary>
