@@ -40,10 +40,16 @@
                          SelectionChanged="OnFileSelected">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="local:FileItem">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Image Source="{Binding PreviewImage}" Width="40" Height="50" Stretch="Uniform" />
-                                <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" />
-                            </StackPanel>
+                            <Panel>
+                                <Border Background="#44FF0000" IsVisible="{Binding !HasPdf}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Panel Width="40" Height="50">
+                                        <Image Source="{Binding PreviewImage}" Stretch="Uniform" />
+                                        <TextBlock Text="⚠️" Foreground="Red" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center" IsVisible="{Binding !HasPdf}" />
+                                    </Panel>
+                                    <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Panel>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>

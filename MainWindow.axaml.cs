@@ -15,6 +15,7 @@ public class FileItem
 {
     public string FileName { get; set; } = string.Empty;
     public Bitmap? PreviewImage { get; set; }
+    public bool HasPdf { get; set; }
 }
 
 public partial class MainWindow : Window
@@ -102,15 +103,19 @@ public partial class MainWindow : Window
 
             if (files.Count == 0)
             {
-                FileListBox.ItemsSource = new[] { new FileItem { FileName = "(No files found in NoteInDataSync folder)" } };
+                FileListBox.ItemsSource = new[] { new FileItem { FileName = "(No files found in NoteInDataSync folder)", HasPdf = true } };
             }
             else
             {
                 var items = new List<FileItem>();
                 foreach (var f in files)
                 {
+                    var pdfName = Path.GetFileNameWithoutExtension(f.Name) + ".pdf";
                     var pngName = Path.GetFileNameWithoutExtension(f.Name) + ".png";
+                    var pdfPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pdfName);
                     var pngPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pngName);
+                    
+                    bool hasPdf = File.Exists(pdfPath);
                     
                     Bitmap? bmp = null;
                     if (File.Exists(pngPath))
@@ -118,7 +123,7 @@ public partial class MainWindow : Window
                         try { bmp = new Bitmap(pngPath); }
                         catch { }
                     }
-                    items.Add(new FileItem { FileName = f.Name, PreviewImage = bmp });
+                    items.Add(new FileItem { FileName = f.Name, PreviewImage = bmp, HasPdf = hasPdf });
                 }
                 FileListBox.ItemsSource = items;
             }
