@@ -65,6 +65,8 @@ public partial class MainWindow : Window
         FileListBox.ItemsSource = null;
         LogBox.Text = "";
         LogBox.IsVisible = false;
+        PdfWebView.IsVisible = false;
+        PdfPlaceholder.IsVisible = true;
         StatusText.Text = "Not signed in";
         LogoutButton.IsVisible = false;
         LogoutButton.IsEnabled = true;
@@ -108,6 +110,81 @@ public partial class MainWindow : Window
         {
             LoadingPanel.IsVisible = false;
         }
+    }
+
+    private async void OnFileSelected(object? sender, SelectionChangedEventArgs e)
+    {
+        if (FileListBox.SelectedItem is not string fileName)
+            return;
+
+        var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
+        var pdfPath = Path.Combine(GoogleDriveService.LocalPdfFolder, pdfName);
+
+        if (!File.Exists(pdfPath))
+        {
+            PdfWebView.IsVisible = false;
+            PdfPlaceholder.Text = $"No PDF found for {fileName}";
+            PdfPlaceholder.IsVisible = true;
+            return;
+        }
+
+        try
+        {
+            // Read PDF as base64 and load into PDF.js viewer
+            var pdfBytes = await File.ReadAllBytesAsync(pdfPath);
+            var base64 = Convert.ToBase64String(pdfBytes);
+            var html = BuildPdfViewerHtml(base64);
+
+            PdfPlaceholder.IsVisible = false;
+            PdfWebView.IsVisible = true;
+            PdfWebView.NavigateToString(html);
+        }
+        catch (Exception ex)
+        {
+            PdfPlaceholder.Text = $"Error loading PDF: {ex.Message}";
+            PdfPlaceholder.IsVisible = true;
+            PdfWebView.IsVisible = false;
+        }
+    }
+
+    private static string BuildPdfViewerHtml(string base64Pdf)
+    {
+        return $$"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { background: #525659; overflow: auto; }
+                canvas { display: block; margin: 8px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+            </style>
+        </head>
+        <body>
+            <div id="viewer"></div>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+            <script type="module">
+                import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+
+                const pdfData = Uint8Array.from(atob('{{base64Pdf}}'), c => c.charCodeAt(0));
+                const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+                const viewer = document.getElementById('viewer');
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const scale = 1.5;
+                    const viewport = page.getViewport({ scale });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    viewer.appendChild(canvas);
+                    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                }
+            </script>
+        </body>
+        </html>
+        """;
     }
 
     private async Task ConvertWithLogCaptureAsync(IProgress<string> progress)

@@ -5,10 +5,10 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     Title="NoteinDesktopViewer"
-    Width="600"
-    Height="500"
-    d:DesignHeight="500"
-    d:DesignWidth="600"
+    Width="1100"
+    Height="700"
+    d:DesignHeight="700"
+    d:DesignWidth="1100"
     mc:Ignorable="d">
 
     <DockPanel Margin="16">
@@ -30,21 +30,37 @@
             <TextBlock x:Name="LoadingText" VerticalAlignment="Center" Text="Loading..." />
         </StackPanel>
 
-        <!-- Content area: file list + conversion log -->
-        <Grid RowDefinitions="*,Auto,*">
-            <!-- File list -->
-            <ListBox x:Name="FileListBox" Grid.Row="0" />
+        <!-- Main content: left panel (list + log) | right panel (PDF viewer) -->
+        <Grid ColumnDefinitions="300,8,*">
+            <!-- Left panel -->
+            <Grid Grid.Column="0" RowDefinitions="*,Auto,Auto">
+                <!-- File list -->
+                <ListBox x:Name="FileListBox" Grid.Row="0"
+                         SelectionChanged="OnFileSelected" />
 
-            <!-- Splitter label -->
-            <TextBlock Grid.Row="1" Text="Conversion Log" FontWeight="Bold"
-                       Margin="0,8,0,4" IsVisible="{Binding #LogBox.IsVisible}" />
+                <!-- Splitter label -->
+                <TextBlock Grid.Row="1" Text="Conversion Log" FontWeight="Bold"
+                           Margin="0,8,0,4" IsVisible="{Binding #LogBox.IsVisible}" />
 
-            <!-- Log output -->
-            <TextBox x:Name="LogBox" Grid.Row="2"
-                     IsReadOnly="True" AcceptsReturn="True"
-                     TextWrapping="Wrap"
-                     FontFamily="Consolas,Courier New,monospace" FontSize="12"
-                     IsVisible="False" />
+                <!-- Log output -->
+                <TextBox x:Name="LogBox" Grid.Row="2"
+                         IsReadOnly="True" AcceptsReturn="True"
+                         TextWrapping="Wrap" MaxHeight="150"
+                         FontFamily="Consolas,Courier New,monospace" FontSize="12"
+                         IsVisible="False" />
+            </Grid>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" ResizeDirection="Columns"
+                          Background="Gray" Width="4" />
+
+            <!-- Right panel: PDF viewer -->
+            <Grid Grid.Column="2">
+                <TextBlock x:Name="PdfPlaceholder"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Text="Select a file to view its PDF" Opacity="0.5" />
+                <NativeWebView x:Name="PdfWebView" IsVisible="False" />
+            </Grid>
         </Grid>
     </DockPanel>
 </Window>
