@@ -346,4 +346,10 @@ public partial class MainWindow : Window
             }
         }
     }
+
+    private void OnAboutClick(object? sender, RoutedEventArgs e)
+    {
+        var licensesWindow = new LicensesWindow();
+        licensesWindow.ShowDialog(this);
+    }
 }

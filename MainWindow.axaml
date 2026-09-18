@@ -41,6 +41,7 @@
                 </StackPanel>
                 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="10">
+                    <Button Content="About / Licenses" Click="OnAboutClick" />
                     <Button Content="Toggle Theme" Click="OnThemeToggleClick" />
                 </StackPanel>
             </Grid>

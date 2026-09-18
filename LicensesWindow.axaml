@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="NoteinDesktopViewer.LicensesWindow"
+        Title="Open Source Licenses"
+        Width="600" Height="500"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource SystemControlPageBackgroundChromeLowBrush}">
+    <Grid RowDefinitions="Auto,*">
+        <TextBlock Text="Third-Party Licenses" FontSize="20" FontWeight="SemiBold" Margin="16" />
+        <ScrollViewer Grid.Row="1" Margin="16,0,16,16" Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+            <TextBlock x:Name="LicensesText" TextWrapping="Wrap" FontFamily="Consolas,Courier New,monospace" FontSize="12" Margin="12" />
+        </ScrollViewer>
+    </Grid>
+</Window>
