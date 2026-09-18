@@ -34,6 +34,7 @@ public partial class MainWindow : Window
         {
             LoginButton.IsVisible = false;
             LogoutButton.IsVisible = true;
+            ManuelSyncButton.IsEnabled = true;
             LogoutButton.IsEnabled = false; // Disable until loaded
             LoadingPanel.IsVisible = true;
             LoadingText.Text = "Signing in...";
@@ -64,6 +65,7 @@ public partial class MainWindow : Window
     private async void OnLoginClick(object? sender, RoutedEventArgs e)
     {
         LoginButton.IsEnabled = false;
+        ManuelSyncButton.IsEnabled = true;
         ErrorText.IsVisible = false;
         LoadingPanel.IsVisible = true;
         LoadingText.Text = "Signing in...";
@@ -112,9 +114,15 @@ public partial class MainWindow : Window
         PdfPlaceholder.IsVisible = true;
         StatusText.Text = "Not signed in";
         LogoutButton.IsVisible = false;
+        ManuelSyncButton.IsEnabled = false;
         LogoutButton.IsEnabled = true;
         LoginButton.IsVisible = true;
         LoginButton.IsEnabled = true;
+    }
+
+    private async void OnManuelSyncClick(object? sender, RoutedEventArgs e)
+    {
+        await SyncAndDisplayFilesAsync();
     }
 
     private async Task SyncAndDisplayFilesAsync()

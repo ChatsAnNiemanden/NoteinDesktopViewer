@@ -18,6 +18,7 @@
             <Button x:Name="LoginButton" Content="Sign in with Google" Click="OnLoginClick" />
             <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Not signed in" />
             <Button x:Name="LogoutButton" Content="Sign out" Click="OnLogoutClick" IsVisible="False" />
+            <Button x:Name="ManuelSyncButton" Content="Sync" Click="OnManuelSyncClick" IsEnabled="False"/>
         </StackPanel>
 
         <!-- Error message -->
