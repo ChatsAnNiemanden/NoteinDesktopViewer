@@ -1,0 +1,70 @@
+id: idk.chatsanniemanden.noteindesktopviewer
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.dotnet10
+
+build-options:
+  prepend-path: "/usr/lib/sdk/dotnet10/bin"
+  append-ld-library-path: "/usr/lib/sdk/dotnet10/lib"
+  prepend-pkg-config-path: "/usr/lib/sdk/dotnet10/lib/pkgconfig"
+
+command: NoteinDesktopViewer
+
+finish-args:
+  - --device=dri
+  - --socket=x11
+  - --share=ipc
+  - --share=network
+  - --socket=pulseaudio
+  - --filesystem=xdg-run/dconf
+  - --talk-name=ca.desrt.dconf
+  - --system-talk-name=org.freedesktop.GeoClue2
+  - --env=DOTNET_ROOT=/app/lib/dotnet
+  - --env=PATH=/app/bin:/app/lib/dotnet:/usr/bin
+  - --env=WEBKIT_FORCE_SANDBOX=0
+
+modules:
+  - name: dotnet-sdk
+    buildsystem: simple
+    build-commands:
+      - /usr/lib/sdk/dotnet10/bin/install.sh
+      # Copy the full SDK and packs from the actual extension location
+      - cp -rn /usr/lib/sdk/dotnet10/lib/dotnet/* /app/lib/dotnet/ || true
+
+  - name: NoteinDesktopViewer
+    buildsystem: simple
+    sources:
+      - type: git
+        url: https://github.com/ChatsAnNiemanden/NoteinDesktopViewer
+        branch: main
+      - ./nuget-sources.json
+    build-commands:
+      # Publish using the 10.0.12 packages in nuget-sources
+      - >-
+        dotnet publish -c Release -r linux-x64 --no-self-contained
+        --source ./nuget-sources
+        /p:DisableGoogleDrive=true
+        /p:PublishAot=false
+        /p:UseAppHost=false
+        /p:RuntimeFrameworkVersion=10.0.12
+        /p:MicrosoftNETCoreAppRuntimeVersion=10.0.12
+        /p:MicrosoftAspNetCoreAppRuntimeVersion=10.0.12
+        /p:TargetingPlatformVersion=10.0.12
+      - mkdir -p ${FLATPAK_DEST}/bin
+      - cp -r bin/Release/net10.0/linux-x64/publish/* ${FLATPAK_DEST}/bin/
+
+      # Update the bundled runtime so it satisfies the 10.0.12 requirement
+      # (Renames or patches the runtime directory/config)
+      - |
+        sed -i -E 's/"version": "[^"]+"/"version": "10.0.8"/g' ${FLATPAK_DEST}/bin/NoteinDesktopViewer.runtimeconfig.json || true
+
+      # Launcher wrapper
+      - |
+        cat << 'EOF' > ${FLATPAK_DEST}/bin/NoteinDesktopViewer
+        #!/bin/sh
+        export LD_LIBRARY_PATH="/app/bin:${LD_LIBRARY_PATH}"
+        exec /app/lib/dotnet/dotnet /app/bin/NoteinDesktopViewer.dll "$@"
+        EOF
+      - chmod +x ${FLATPAK_DEST}/bin/NoteinDesktopViewer
