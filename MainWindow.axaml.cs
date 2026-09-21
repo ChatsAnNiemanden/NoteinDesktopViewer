@@ -28,6 +28,7 @@ public partial class MainWindow : Window
     private readonly LocalFolderService _localService = new();
     private INoteSourceService _activeService = null!;
     private readonly AppSettings _settings;
+    private PdfViewerServer? _pdfServer;
 
     public MainWindow()
     {
@@ -370,17 +371,18 @@ public partial class MainWindow : Window
 
         try
         {
-            // Read PDF as base64 and load into PDF.js viewer
+            // Read PDF as base64 and load into PDF.js viewer via local HTTP server.
+            // Using localhost instead of file:// avoids WebKitGTK blocking CDN scripts on Linux.
             var pdfBytes = await File.ReadAllBytesAsync(pdfPath);
             var base64 = Convert.ToBase64String(pdfBytes);
             var html = BuildPdfViewerHtml(base64);
 
-            var tempHtmlPath = Path.Combine(Path.GetTempPath(), "notein_viewer.html");
-            File.WriteAllText(tempHtmlPath, html);
+            _pdfServer ??= new PdfViewerServer();
+            _pdfServer.SetContent(html);
 
             PdfPlaceholder.IsVisible = false;
             PdfWebView.IsVisible = true;
-            PdfWebView.Navigate(new Uri($"file:///{tempHtmlPath.Replace('\\', '/')}"));
+            PdfWebView.Navigate(new Uri($"http://127.0.0.1:{_pdfServer.Port}/"));
         }
         catch (Exception ex)
         {
@@ -520,5 +522,11 @@ public partial class MainWindow : Window
     {
         var licensesWindow = new LicensesWindow();
         licensesWindow.ShowDialog(this);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        _pdfServer?.Dispose();
     }
 }
