@@ -1074,31 +1074,6 @@ namespace NoteinDesktopViewer
             }
             catch { }
 
-            // 2. Try application assets/fonts
-            try
-            {
-                string baseDir = AppContext.BaseDirectory;
-                string[] candidateDirs = new[]
-                {
-                    Path.Combine(baseDir, "assets", "fonts"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "assets", "fonts"),
-                    @"d:\Documents\codeing\NoteinDesktopViewer\assets\fonts"
-                };
-
-                foreach (var dir in candidateDirs)
-                {
-                    if (Directory.Exists(dir))
-                    {
-                        string roboto = Path.Combine(dir, "Roboto-Regular.ttf");
-                        if (File.Exists(roboto)) return File.ReadAllBytes(roboto);
-
-                        var anyTtf = Directory.GetFiles(dir, "*.ttf").FirstOrDefault();
-                        if (anyTtf != null) return File.ReadAllBytes(anyTtf);
-                    }
-                }
-            }
-            catch { }
-
             return null;
         }
     }
