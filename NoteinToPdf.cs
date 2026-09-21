@@ -1,6 +1,7 @@
-﻿using Avalonia.Controls;
+using Avalonia.Controls;
 using Microsoft.Data.Sqlite;
 using PdfSharp.Drawing;
+using PdfSharp.Fonts;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 using System;
@@ -25,6 +26,14 @@ namespace NoteinDesktopViewer
         private static readonly byte[] INK_MAGIC_BYTES = Encoding.ASCII.GetBytes("NIPB");
         private static readonly string tempdir = Path.Combine(Path.GetTempPath(), "NoteinToPdf");
 
+        static NoteinToPdf()
+        {
+            if (GlobalFontSettings.FontResolver == null)
+            {
+                GlobalFontSettings.FontResolver = new NoteinFontResolver();
+            }
+        }
+
 
         private struct PointData
         {
@@ -39,6 +48,7 @@ namespace NoteinDesktopViewer
             public int Color { get; set; }
             public double Width { get; set; }
             public List<PointData> Points { get; set; }
+            public string BrushType { get; set; }
         }
 
         private static (double r, double g, double b, double a) AndroidColorToRgba(long colorVal)
@@ -103,6 +113,7 @@ namespace NoteinDesktopViewer
             var inputAttrs = new List<float>();
             double brushSize = 3.0;
             ulong brushColor = 0xFF000000;
+            string brushType = "notein-ballpoint-v1";
 
             int pos = 0;
             while (pos < data.Length)
@@ -150,7 +161,11 @@ namespace NoteinDesktopViewer
                     byte[] chunk = data[pos..(pos + (int)length)];
                     pos += (int)length;
 
-                    if (fieldNumber == 10) // input_xy
+                    if (fieldNumber == 7) // brush type name
+                    {
+                        try { brushType = Encoding.UTF8.GetString(chunk); } catch { }
+                    }
+                    else if (fieldNumber == 10) // input_xy
                     {
                         int n = chunk.Length / 4;
                         rawXy.Clear();
@@ -207,7 +222,8 @@ namespace NoteinDesktopViewer
             {
                 Color = (int)brushColor,
                 Width = brushSize,
-                Points = points
+                Points = points,
+                BrushType = brushType
             };
         }
 
@@ -315,27 +331,126 @@ namespace NoteinDesktopViewer
 
             var (r, g, b, a) = AndroidColorToRgba(stroke.Color);
             double baseWidth = stroke.Width;
+            double scale = Math.Sqrt(scaleX * scaleY);
+            bool isPencil = stroke.BrushType != null && stroke.BrushType.Contains("pencil");
+            bool isHighlighter = stroke.BrushType != null && (stroke.BrushType.Contains("highlighter") || stroke.BrushType.Contains("marker"));
+            bool isTape = stroke.BrushType != null && stroke.BrushType.Contains("tape");
 
-            XColor color = XColor.FromArgb((int)(a * 255), (int)(r * 255), (int)(g * 255), (int)(b * 255));
-            var pen = new XPen(color, 1)
+            var pts = stroke.Points.Select(p => new XPoint(p.X * scaleX, p.Y * scaleY)).ToList();
+
+            if (isPencil)
+                DrawPencilStroke(gfx, stroke, pts, r, g, b, a, baseWidth, scale);
+            else if (isHighlighter)
+                DrawHighlighterStroke(gfx, stroke, pts, r, g, b, a, baseWidth, scale);
+            else if (isTape)
+                DrawTapeStroke(gfx, stroke, pts, r, g, b, a, baseWidth, scale);
+            else
+                DrawBallpointStroke(gfx, stroke, pts, r, g, b, a, baseWidth, scale);
+        }
+
+        private static void DrawHighlighterStroke(XGraphics gfx, StrokeRecord stroke, List<XPoint> pts,
+            double r, double g, double b, double a, double baseWidth, double scale)
+        {
+            // Text markers/highlighters are semi-transparent (~48% opacity)
+            double highlighterAlpha = Math.Clamp(a * 0.48, 0.05, 0.70);
+            XColor color = XColor.FromArgb((int)(highlighterAlpha * 255), (int)(r * 255), (int)(g * 255), (int)(b * 255));
+            double strokeWidth = baseWidth * scale;
+
+            var pen = new XPen(color, strokeWidth)
             {
                 LineCap = XLineCap.Round,
                 LineJoin = XLineJoin.Round
-            }; // width set per segment
+            };
 
-            for (int i = 0; i < stroke.Points.Count - 1; i++)
+            var path = new XGraphicsPath();
+            path.AddLines(pts.ToArray());
+            gfx.DrawPath(pen, path);
+        }
+
+        private static void DrawTapeStroke(XGraphics gfx, StrokeRecord stroke, List<XPoint> pts,
+            double r, double g, double b, double a, double baseWidth, double scale)
+        {
+            // Study tape is 100% opaque
+            XColor color = XColor.FromArgb(255, (int)(r * 255), (int)(g * 255), (int)(b * 255));
+            double strokeWidth = baseWidth * scale;
+
+            var pen = new XPen(color, strokeWidth)
             {
-                var p0 = stroke.Points[i];
-                var p1 = stroke.Points[i + 1];
-                double pressure = (p0.Pressure + p1.Pressure) / 2.0;
-                double width = baseWidth * Math.Max(pressure, 0.2) * scaleX;
-                pen.Width = width;
+                LineCap = XLineCap.Round,
+                LineJoin = XLineJoin.Round
+            };
 
-                double x0 = p0.X * scaleX;
-                double y0 = p0.Y * scaleY;
-                double x1 = p1.X * scaleX;
-                double y1 = p1.Y * scaleY;
-                gfx.DrawLine(pen, x0, y0, x1, y1);
+            var path = new XGraphicsPath();
+            path.AddLines(pts.ToArray());
+            gfx.DrawPath(pen, path);
+        }
+
+        private static void DrawBallpointStroke(XGraphics gfx, StrokeRecord stroke, List<XPoint> pts,
+            double r, double g, double b, double a, double baseWidth, double scale)
+        {
+            XColor color = XColor.FromArgb((int)(a * 255), (int)(r * 255), (int)(g * 255), (int)(b * 255));
+            var pen = new XPen(color, 1) { LineCap = XLineCap.Round, LineJoin = XLineJoin.Round };
+
+            for (int i = 0; i < pts.Count - 1; i++)
+            {
+                double pressure = (stroke.Points[i].Pressure + stroke.Points[i + 1].Pressure) / 2.0;
+                pen.Width = baseWidth * Math.Max(pressure, 0.2) * scale;
+                gfx.DrawLine(pen, pts[i], pts[i + 1]);
+            }
+        }
+
+        private static void DrawPencilStroke(XGraphics gfx, StrokeRecord stroke, List<XPoint> pts,
+            double r, double g, double b, double a, double baseWidth, double scale)
+        {
+            Random rand = new Random(stroke.GetHashCode());
+            double avgPressure = stroke.Points.Average(p => p.Pressure);
+            double strokeWidth = baseWidth * Math.Max(avgPressure, 0.2) * scale;
+
+            // Layer 1: a few faint, jittered hair-lines — ONE continuous path per pass
+            // (avoids round-cap blobs stacking at every point)
+            int passes = 5;
+            for (int pass = 0; pass < passes; pass++)
+            {
+                double passAlpha = a * (0.15 + rand.NextDouble() * 0.25); // faint per pass
+                var color = XColor.FromArgb((int)(passAlpha * 255), (int)(r * 255), (int)(g * 255), (int)(b * 255));
+                double lineWidth = strokeWidth * (0.55 + rand.NextDouble() * 0.35); // stay near target width, don't inflate
+
+                var pen = new XPen(color, lineWidth) { LineCap = XLineCap.Round, LineJoin = XLineJoin.Round };
+
+                var jittered = new XPoint[pts.Count];
+                for (int i = 0; i < pts.Count; i++)
+                {
+                    double jx = (rand.NextDouble() - 0.5) * strokeWidth * 0.35;
+                    double jy = (rand.NextDouble() - 0.5) * strokeWidth * 0.35;
+                    jittered[i] = new XPoint(pts[i].X + jx, pts[i].Y + jy);
+                }
+
+                var path = new XGraphicsPath();
+                path.AddLines(jittered);
+                gfx.DrawPath(pen, path);
+            }
+
+            // Layer 2: graphite grain — sparse dots scattered across the stroke corridor.
+            // This is the part that actually reads as "pencil texture".
+            int grainCount = (int)(pts.Count * 5 * (strokeWidth / 2.0 + 1));
+            for (int i = 0; i < grainCount; i++)
+            {
+                int idx = rand.Next(pts.Count - 1);
+                var p0 = pts[idx];
+                var p1 = pts[idx + 1];
+                double t = rand.NextDouble();
+                double x = p0.X + (p1.X - p0.X) * t;
+                double y = p0.Y + (p1.Y - p0.Y) * t;
+
+                double angle = rand.NextDouble() * Math.PI * 2;
+                double radius = rand.NextDouble() * strokeWidth * 0.55;
+                x += Math.Cos(angle) * radius;
+                y += Math.Sin(angle) * radius;
+
+                double dotAlpha = a * (0.15 + rand.NextDouble() * 0.45);
+                var dotColor = XColor.FromArgb((int)(dotAlpha * 255), (int)(r * 255), (int)(g * 255), (int)(b * 255));
+                double dotSize = 0.25 + rand.NextDouble() * 0.35;
+                gfx.DrawEllipse(new XSolidBrush(dotColor), x - dotSize / 2, y - dotSize / 2, dotSize, dotSize);
             }
         }
 
@@ -429,6 +544,124 @@ namespace NoteinDesktopViewer
             {
                 Console.WriteLine($"    Warning: Could not draw image {Path.GetFileName(imgFile)}: {ex.Message}");
             }
+        }
+
+        private static void DrawTextBox(XGraphics gfx, Dictionary<string, object> tbRow, double scaleX, double scaleY)
+        {
+            string? rawText = tbRow.TryGetValue("text", out var t) ? t as string : null;
+            if (string.IsNullOrWhiteSpace(rawText)) return;
+
+            // Coordinates
+            double left = tbRow.TryGetValue("left", out var l) && l != null ? Convert.ToDouble(l) : 0;
+            double top = tbRow.TryGetValue("top", out var tp) && tp != null ? Convert.ToDouble(tp) : 0;
+            double right = tbRow.TryGetValue("right", out var rt) && rt != null ? Convert.ToDouble(rt) : 0;
+            double bottom = tbRow.TryGetValue("bottom", out var bm) && bm != null ? Convert.ToDouble(bm) : 0;
+
+            if (right <= left && tbRow.TryGetValue("bounds", out var bObj) && bObj != null)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(bObj.ToString()!);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("left", out var bl)) left = bl.GetDouble();
+                    if (root.TryGetProperty("top", out var bt)) top = bt.GetDouble();
+                    if (root.TryGetProperty("right", out var br)) right = br.GetDouble();
+                    if (root.TryGetProperty("bottom", out var bb)) bottom = bb.GetDouble();
+                }
+                catch { }
+            }
+
+            double width = right - left;
+            double height = bottom - top;
+            if (width <= 0 && tbRow.TryGetValue("box_width", out var bw) && bw != null) width = Convert.ToDouble(bw);
+            if (height <= 0 && tbRow.TryGetValue("box_height", out var bh) && bh != null) height = Convert.ToDouble(bh);
+
+            double px = left * scaleX;
+            double py = top * scaleY;
+            double pw = width * scaleX;
+            double ph = height * scaleY;
+
+            // Background color if any
+            if (tbRow.TryGetValue("background_color", out var bg) && bg != null)
+            {
+                long bgColor = Convert.ToInt64(bg);
+                if (bgColor != 0)
+                {
+                    var (bgR, bgG, bgB, bgA) = AndroidColorToRgba(bgColor);
+                    if (bgA > 0.01)
+                    {
+                        var bgBrush = new XSolidBrush(XColor.FromArgb((int)(bgA * 255), (int)(bgR * 255), (int)(bgG * 255), (int)(bgB * 255)));
+                        gfx.DrawRectangle(bgBrush, px, py, pw, ph);
+                    }
+                }
+            }
+
+            // Extract font size
+            double scale = Math.Sqrt(scaleX * scaleY);
+            double fontSizeCanvas = 0;
+            var sizeMatch = Regex.Match(rawText, @"font-size\s*:\s*(\d+(\.\d+)?)px", RegexOptions.IgnoreCase);
+            if (sizeMatch.Success && double.TryParse(sizeMatch.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double parsedFs))
+            {
+                fontSizeCanvas = parsedFs;
+            }
+            else if (tbRow.TryGetValue("text_size", out var ts) && ts != null)
+            {
+                fontSizeCanvas = Convert.ToDouble(ts);
+            }
+
+            if (fontSizeCanvas <= 0) fontSizeCanvas = 30.0;
+            double fontSizePt = fontSizeCanvas * scale;
+            if (fontSizePt < 6.0) fontSizePt = 6.0;
+
+            // Extract text color
+            XColor textColor = XColor.FromArgb(255, 0, 0, 0);
+            var colorMatch = Regex.Match(rawText, @"color\s*:\s*#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})", RegexOptions.IgnoreCase);
+            if (colorMatch.Success)
+            {
+                string hex = colorMatch.Groups[1].Value;
+                if (hex.Length == 6)
+                {
+                    byte cr = Convert.ToByte(hex.Substring(0, 2), 16);
+                    byte cg = Convert.ToByte(hex.Substring(2, 2), 16);
+                    byte cb = Convert.ToByte(hex.Substring(4, 2), 16);
+                    textColor = XColor.FromArgb(255, cr, cg, cb);
+                }
+                else if (hex.Length == 8)
+                {
+                    byte ca = Convert.ToByte(hex.Substring(0, 2), 16);
+                    byte cr = Convert.ToByte(hex.Substring(2, 2), 16);
+                    byte cg = Convert.ToByte(hex.Substring(4, 2), 16);
+                    byte cb = Convert.ToByte(hex.Substring(6, 2), 16);
+                    textColor = XColor.FromArgb(ca, cr, cg, cb);
+                }
+            }
+            else if (tbRow.TryGetValue("default_text_color", out var dtc) && dtc != null)
+            {
+                var (tr, tg, tb, ta) = AndroidColorToRgba(Convert.ToInt64(dtc));
+                textColor = XColor.FromArgb((int)(ta * 255), (int)(tr * 255), (int)(tg * 255), (int)(tb * 255));
+            }
+
+            // Font style
+            bool isBold = Regex.IsMatch(rawText, @"<(b|strong)\b", RegexOptions.IgnoreCase) || Regex.IsMatch(rawText, @"font-weight\s*:\s*bold", RegexOptions.IgnoreCase);
+            bool isItalic = Regex.IsMatch(rawText, @"<(i|em)\b", RegexOptions.IgnoreCase) || Regex.IsMatch(rawText, @"font-style\s*:\s*italic", RegexOptions.IgnoreCase);
+            var fontStyle = (isBold && isItalic) ? XFontStyleEx.BoldItalic : isBold ? XFontStyleEx.Bold : isItalic ? XFontStyleEx.Italic : XFontStyleEx.Regular;
+
+            // Strip style blocks and HTML tags to extract clean text
+            string cleanText = Regex.Replace(rawText, @"<style[^>]*>[\s\S]*?</style>", "", RegexOptions.IgnoreCase);
+            cleanText = Regex.Replace(cleanText, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+            cleanText = Regex.Replace(cleanText, @"</(p|div|li|tr|h[1-6])>", "\n", RegexOptions.IgnoreCase);
+            cleanText = Regex.Replace(cleanText, @"<[^>]+>", "");
+            cleanText = System.Net.WebUtility.HtmlDecode(cleanText).Trim('\r', '\n');
+
+            if (string.IsNullOrWhiteSpace(cleanText)) return;
+
+            var font = new XFont("Arial", fontSizePt, fontStyle);
+            var brush = new XSolidBrush(textColor);
+            var rect = new XRect(px, py, Math.Max(pw, 20), Math.Max(ph, fontSizePt * 1.2));
+
+            // Wrap lines if multiline or long text
+            var tf = new PdfSharp.Drawing.Layout.XTextFormatter(gfx);
+            tf.DrawString(cleanText, font, brush, rect);
         }
 
         private static (FileInfo pdf, int pageIndex) FindBackgroundPdf(DirectoryInfo noteDir, JsonElement paperTheme)
@@ -569,11 +802,21 @@ namespace NoteinDesktopViewer
                                     });
                                 }
                             }
+                            int strokeType = doc.RootElement.TryGetProperty("type", out var tProp) ? tProp.GetInt32() : 0;
+                            string brushType = strokeType switch
+                            {
+                                9 => "notein-highlighter-v1",
+                                10 => "notein-pencil-v2",
+                                11 => "notein-tape-v1",
+                                _ => "notein-ballpoint-v1"
+                            };
+
                             parsed = new StrokeRecord
                             {
                                 Color = doc.RootElement.TryGetProperty("color", out var col) ? col.GetInt32() : -16777216,
                                 Width = doc.RootElement.TryGetProperty("width", out var w) ? w.GetDouble() : 3.0,
-                                Points = points
+                                Points = points,
+                                BrushType = brushType
                             };
                         }
                         catch { }
@@ -635,13 +878,29 @@ namespace NoteinDesktopViewer
             }
             catch (SqliteException) { }
 
+            var textBoxesByPage = new Dictionary<string, List<Dictionary<string, object>>>();
+            try
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT * FROM TextBoxEntity ORDER BY creation_time";
+                using var reader = cmd.ExecuteReader();
+                while (reader.Read())
+                {
+                    var row = ReadRow(reader);
+                    string pageId = row["page_id"].ToString() ?? "";
+                    if (!textBoxesByPage.ContainsKey(pageId)) textBoxesByPage[pageId] = new List<Dictionary<string, object>>();
+                    textBoxesByPage[pageId].Add(row);
+                }
+            }
+            catch (SqliteException) { }
+
             conn.Close();
 
-            CreatePDF(noteTitle, pageIds, pages, noteDir, imagesByPage, shapesByPage, strokesByPage, outputPdfPath);
+            CreatePDF(noteTitle, pageIds, pages, noteDir, imagesByPage, shapesByPage, strokesByPage, textBoxesByPage, outputPdfPath);
 
         }
 
-        private static void CreatePDF(string title, List<string> pageIds, Dictionary<string, Dictionary<string, object>> pages, DirectoryInfo noteDir, Dictionary<string, List<Dictionary<string, object>>> imagesByPage, Dictionary<string, List<Dictionary<string, object>>> shapesByPage, Dictionary<string, List<StrokeRecord>> strokesByPage, string outputPdf)
+        private static void CreatePDF(string title, List<string> pageIds, Dictionary<string, Dictionary<string, object>> pages, DirectoryInfo noteDir, Dictionary<string, List<Dictionary<string, object>>> imagesByPage, Dictionary<string, List<Dictionary<string, object>>> shapesByPage, Dictionary<string, List<StrokeRecord>> strokesByPage, Dictionary<string, List<Dictionary<string, object>>> textBoxesByPage, string outputPdf)
         {
             using var document = new PdfDocument();
             document.Info.Title = title;
@@ -714,17 +973,27 @@ namespace NoteinDesktopViewer
                     foreach (var img in images)
                         DrawImage(gfx, img, noteDir, pageH, scaleX, scaleY);
 
+                // Text boxes
+                if (textBoxesByPage.TryGetValue(pageId, out var textBoxes))
+                    foreach (var tb in textBoxes)
+                        DrawTextBox(gfx, tb, scaleX, scaleY);
+
                 // Shapes
                 if (shapesByPage.TryGetValue(pageId, out var shapes))
                     foreach (var shape in shapes)
                         DrawShape(gfx, shape, pageH, scaleX, scaleY);
 
-                // Strokes
+                // Strokes (draw highlighters first so they sit under opaque pen/pencil strokes)
                 if (strokesByPage.TryGetValue(pageId, out var strokes))
-                    foreach (var stroke in strokes)
+                {
+                    foreach (var stroke in strokes.Where(s => s.BrushType != null && (s.BrushType.Contains("highlighter") || s.BrushType.Contains("marker"))))
                         DrawStroke(gfx, stroke, pageH, scaleX, scaleY);
 
-                Console.WriteLine($"  Page {i + 1}/{pageIds.Count}: {(strokes?.Count ?? 0)} strokes, {(shapes?.Count ?? 0)} shapes, {(images?.Count ?? 0)} images" +
+                    foreach (var stroke in strokes.Where(s => s.BrushType == null || (!s.BrushType.Contains("highlighter") && !s.BrushType.Contains("marker"))))
+                        DrawStroke(gfx, stroke, pageH, scaleX, scaleY);
+                }
+
+                Console.WriteLine($"  Page {i + 1}/{pageIds.Count}: {(strokes?.Count ?? 0)} strokes, {(shapes?.Count ?? 0)} shapes, {(images?.Count ?? 0)} images, {(textBoxes?.Count ?? 0)} text boxes" +
                                   (bgPdfFile != null ? $" (template PDF: {bgPdfFile.Name})" : ""));
             }
 
@@ -764,6 +1033,73 @@ namespace NoteinDesktopViewer
             {
                 try { Directory.Delete(noteTempDir, true); } catch { }
             }
+        }
+    }
+
+    internal class NoteinFontResolver : IFontResolver
+    {
+        public FontResolverInfo? ResolveTypeface(string familyName, bool isBold, bool isItalic)
+        {
+            string suffix = (isBold && isItalic) ? "-BoldItalic" : isBold ? "-Bold" : isItalic ? "-Italic" : "-Regular";
+            return new FontResolverInfo(familyName + suffix);
+        }
+
+        public byte[]? GetFont(string faceName)
+        {
+            // 1. Try Windows fonts folder
+            try
+            {
+                string winFonts = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
+                if (!string.IsNullOrEmpty(winFonts) && Directory.Exists(winFonts))
+                {
+                    if (faceName.Contains("BoldItalic", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string path = Path.Combine(winFonts, "arialbi.ttf");
+                        if (File.Exists(path)) return File.ReadAllBytes(path);
+                    }
+                    else if (faceName.Contains("Bold", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string path = Path.Combine(winFonts, "arialbd.ttf");
+                        if (File.Exists(path)) return File.ReadAllBytes(path);
+                    }
+                    else if (faceName.Contains("Italic", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string path = Path.Combine(winFonts, "ariali.ttf");
+                        if (File.Exists(path)) return File.ReadAllBytes(path);
+                    }
+
+                    string arial = Path.Combine(winFonts, "arial.ttf");
+                    if (File.Exists(arial)) return File.ReadAllBytes(arial);
+                }
+            }
+            catch { }
+
+            // 2. Try application assets/fonts
+            try
+            {
+                string baseDir = AppContext.BaseDirectory;
+                string[] candidateDirs = new[]
+                {
+                    Path.Combine(baseDir, "assets", "fonts"),
+                    Path.Combine(Directory.GetCurrentDirectory(), "assets", "fonts"),
+                    @"d:\Documents\codeing\NoteinDesktopViewer\assets\fonts"
+                };
+
+                foreach (var dir in candidateDirs)
+                {
+                    if (Directory.Exists(dir))
+                    {
+                        string roboto = Path.Combine(dir, "Roboto-Regular.ttf");
+                        if (File.Exists(roboto)) return File.ReadAllBytes(roboto);
+
+                        var anyTtf = Directory.GetFiles(dir, "*.ttf").FirstOrDefault();
+                        if (anyTtf != null) return File.ReadAllBytes(anyTtf);
+                    }
+                }
+            }
+            catch { }
+
+            return null;
         }
     }
 }
