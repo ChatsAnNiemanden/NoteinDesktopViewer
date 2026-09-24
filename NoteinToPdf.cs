@@ -51,7 +51,7 @@ namespace NoteinDesktopViewer
             public string BrushType { get; set; }
         }
 
-        private static (double r, double g, double b, double a) AndroidColorToRgba(long colorVal)
+        private static (double r, double g, double b, double a) AndroidColorToRgba(long colorVal, double darkenFactor = 1.0)
         {
             uint unsigned;
             if (colorVal > 0xFFFFFFFF)
@@ -63,6 +63,14 @@ namespace NoteinDesktopViewer
             double r = ((unsigned >> 16) & 0xFF) / 255.0;
             double g = ((unsigned >> 8) & 0xFF) / 255.0;
             double b = (unsigned & 0xFF) / 255.0;
+
+            if (darkenFactor != 1.0)
+            {
+                r = Math.Pow(r, darkenFactor);
+                g = Math.Pow(g, darkenFactor);
+                b = Math.Pow(b, darkenFactor);
+            }
+
             return (r, g, b, a);
         }
 
@@ -325,11 +333,11 @@ namespace NoteinDesktopViewer
             }
         }
 
-        private static void DrawStroke(XGraphics gfx, StrokeRecord stroke, double pageH, double scaleX, double scaleY)
+        private static void DrawStroke(XGraphics gfx, StrokeRecord stroke, double pageH, double scaleX, double scaleY, double darkenFactor)
         {
             if (stroke.Points.Count < 2) return;
 
-            var (r, g, b, a) = AndroidColorToRgba(stroke.Color);
+            var (r, g, b, a) = AndroidColorToRgba(stroke.Color, darkenFactor);
             double baseWidth = stroke.Width;
             double scale = Math.Sqrt(scaleX * scaleY);
             bool isPencil = stroke.BrushType != null && stroke.BrushType.Contains("pencil");
@@ -454,7 +462,7 @@ namespace NoteinDesktopViewer
             }
         }
 
-        private static void DrawShape(XGraphics gfx, Dictionary<string, object> shapeRow, double pageH, double scaleX, double scaleY)
+        private static void DrawShape(XGraphics gfx, Dictionary<string, object> shapeRow, double pageH, double scaleX, double scaleY, double darkenFactor)
         {
             long color = shapeRow.TryGetValue("color", out var c) ? Convert.ToInt64(c) : 0xFF000000;
             double width = (shapeRow.TryGetValue("width", out var w) ? Convert.ToDouble(w) : 3.0) * scaleX;
@@ -469,7 +477,7 @@ namespace NoteinDesktopViewer
             catch { return; }
             if (points.Count < 2) return;
 
-            var (r, g, b, a) = AndroidColorToRgba(color);
+            var (r, g, b, a) = AndroidColorToRgba(color, darkenFactor);
             var pen = new XPen(XColor.FromArgb((int)(a * 255), (int)(r * 255), (int)(g * 255), (int)(b * 255)), width)
             {
                 LineCap = XLineCap.Round,
@@ -546,7 +554,7 @@ namespace NoteinDesktopViewer
             }
         }
 
-        private static void DrawTextBox(XGraphics gfx, Dictionary<string, object> tbRow, double scaleX, double scaleY)
+        private static void DrawTextBox(XGraphics gfx, Dictionary<string, object> tbRow, double scaleX, double scaleY, double darkenFactor)
         {
             string? rawText = tbRow.TryGetValue("text", out var t) ? t as string : null;
             if (string.IsNullOrWhiteSpace(rawText)) return;
@@ -621,23 +629,25 @@ namespace NoteinDesktopViewer
                 string hex = colorMatch.Groups[1].Value;
                 if (hex.Length == 6)
                 {
-                    byte cr = Convert.ToByte(hex.Substring(0, 2), 16);
-                    byte cg = Convert.ToByte(hex.Substring(2, 2), 16);
-                    byte cb = Convert.ToByte(hex.Substring(4, 2), 16);
-                    textColor = XColor.FromArgb(255, cr, cg, cb);
+                    double cr = Convert.ToByte(hex.Substring(0, 2), 16) / 255.0;
+                    double cg = Convert.ToByte(hex.Substring(2, 2), 16) / 255.0;
+                    double cb = Convert.ToByte(hex.Substring(4, 2), 16) / 255.0;
+                    if (darkenFactor != 1.0) { cr = Math.Pow(cr, darkenFactor); cg = Math.Pow(cg, darkenFactor); cb = Math.Pow(cb, darkenFactor); }
+                    textColor = XColor.FromArgb(255, (int)(cr * 255), (int)(cg * 255), (int)(cb * 255));
                 }
                 else if (hex.Length == 8)
                 {
                     byte ca = Convert.ToByte(hex.Substring(0, 2), 16);
-                    byte cr = Convert.ToByte(hex.Substring(2, 2), 16);
-                    byte cg = Convert.ToByte(hex.Substring(4, 2), 16);
-                    byte cb = Convert.ToByte(hex.Substring(6, 2), 16);
-                    textColor = XColor.FromArgb(ca, cr, cg, cb);
+                    double cr = Convert.ToByte(hex.Substring(2, 2), 16) / 255.0;
+                    double cg = Convert.ToByte(hex.Substring(4, 2), 16) / 255.0;
+                    double cb = Convert.ToByte(hex.Substring(6, 2), 16) / 255.0;
+                    if (darkenFactor != 1.0) { cr = Math.Pow(cr, darkenFactor); cg = Math.Pow(cg, darkenFactor); cb = Math.Pow(cb, darkenFactor); }
+                    textColor = XColor.FromArgb(ca, (int)(cr * 255), (int)(cg * 255), (int)(cb * 255));
                 }
             }
             else if (tbRow.TryGetValue("default_text_color", out var dtc) && dtc != null)
             {
-                var (tr, tg, tb, ta) = AndroidColorToRgba(Convert.ToInt64(dtc));
+                var (tr, tg, tb, ta) = AndroidColorToRgba(Convert.ToInt64(dtc), darkenFactor);
                 textColor = XColor.FromArgb((int)(ta * 255), (int)(tr * 255), (int)(tg * 255), (int)(tb * 255));
             }
 
@@ -896,11 +906,12 @@ namespace NoteinDesktopViewer
 
             conn.Close();
 
-            CreatePDF(noteTitle, pageIds, pages, noteDir, imagesByPage, shapesByPage, strokesByPage, textBoxesByPage, outputPdfPath);
+            var darkenFactor = AppSettings.Load().StrokeDarkenFactor;
+            CreatePDF(noteTitle, pageIds, pages, noteDir, imagesByPage, shapesByPage, strokesByPage, textBoxesByPage, outputPdfPath, darkenFactor);
 
         }
 
-        private static void CreatePDF(string title, List<string> pageIds, Dictionary<string, Dictionary<string, object>> pages, DirectoryInfo noteDir, Dictionary<string, List<Dictionary<string, object>>> imagesByPage, Dictionary<string, List<Dictionary<string, object>>> shapesByPage, Dictionary<string, List<StrokeRecord>> strokesByPage, Dictionary<string, List<Dictionary<string, object>>> textBoxesByPage, string outputPdf)
+        private static void CreatePDF(string title, List<string> pageIds, Dictionary<string, Dictionary<string, object>> pages, DirectoryInfo noteDir, Dictionary<string, List<Dictionary<string, object>>> imagesByPage, Dictionary<string, List<Dictionary<string, object>>> shapesByPage, Dictionary<string, List<StrokeRecord>> strokesByPage, Dictionary<string, List<Dictionary<string, object>>> textBoxesByPage, string outputPdf, double darkenFactor = 1.0)
         {
             using var document = new PdfDocument();
             document.Info.Title = title;
@@ -976,21 +987,21 @@ namespace NoteinDesktopViewer
                 // Text boxes
                 if (textBoxesByPage.TryGetValue(pageId, out var textBoxes))
                     foreach (var tb in textBoxes)
-                        DrawTextBox(gfx, tb, scaleX, scaleY);
+                        DrawTextBox(gfx, tb, scaleX, scaleY, darkenFactor);
 
                 // Shapes
                 if (shapesByPage.TryGetValue(pageId, out var shapes))
                     foreach (var shape in shapes)
-                        DrawShape(gfx, shape, pageH, scaleX, scaleY);
+                        DrawShape(gfx, shape, pageH, scaleX, scaleY, darkenFactor);
 
                 // Strokes (draw highlighters first so they sit under opaque pen/pencil strokes)
                 if (strokesByPage.TryGetValue(pageId, out var strokes))
                 {
                     foreach (var stroke in strokes.Where(s => s.BrushType != null && (s.BrushType.Contains("highlighter") || s.BrushType.Contains("marker"))))
-                        DrawStroke(gfx, stroke, pageH, scaleX, scaleY);
+                        DrawStroke(gfx, stroke, pageH, scaleX, scaleY, darkenFactor);
 
                     foreach (var stroke in strokes.Where(s => s.BrushType == null || (!s.BrushType.Contains("highlighter") && !s.BrushType.Contains("marker"))))
-                        DrawStroke(gfx, stroke, pageH, scaleX, scaleY);
+                        DrawStroke(gfx, stroke, pageH, scaleX, scaleY, darkenFactor);
                 }
 
                 Console.WriteLine($"  Page {i + 1}/{pageIds.Count}: {(strokes?.Count ?? 0)} strokes, {(shapes?.Count ?? 0)} shapes, {(images?.Count ?? 0)} images, {(textBoxes?.Count ?? 0)} text boxes" +

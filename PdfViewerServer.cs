@@ -54,22 +54,25 @@ internal sealed class PdfViewerServer : IDisposable
         }
     }
 
+    public event Action<double>? OnReexportRequested;
+
     private async Task HandleClientAsync(TcpClient client)
     {
         try
         {
             using var stream = client.GetStream();
 
-            // Drain the incoming HTTP request (we don't care about its content)
             var requestBuf = new byte[4096];
             var deadline = DateTime.UtcNow.AddSeconds(5);
+            var reqBuilder = new StringBuilder();
+            
             while (DateTime.UtcNow < deadline)
             {
                 if (stream.DataAvailable)
                 {
                     int n = await stream.ReadAsync(requestBuf);
-                    // Stop once we've seen the blank line that ends the HTTP headers
-                    var req = Encoding.ASCII.GetString(requestBuf, 0, n);
+                    reqBuilder.Append(Encoding.ASCII.GetString(requestBuf, 0, n));
+                    var req = reqBuilder.ToString();
                     if (req.Contains("\r\n\r\n") || req.Contains("\n\n"))
                         break;
                 }
@@ -77,6 +80,23 @@ internal sealed class PdfViewerServer : IDisposable
                 {
                     await Task.Delay(10);
                 }
+            }
+            
+            var fullReq = reqBuilder.ToString();
+            if (fullReq.StartsWith("GET /reexport?darken="))
+            {
+                var endIdx = fullReq.IndexOf(' ', 21);
+                if (endIdx != -1)
+                {
+                    var valStr = fullReq.Substring(21, endIdx - 21);
+                    if (double.TryParse(valStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                    {
+                        OnReexportRequested?.Invoke(val);
+                    }
+                }
+                var okHeader = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+                await stream.WriteAsync(okHeader);
+                return;
             }
 
             var html = Volatile.Read(ref _currentHtml);

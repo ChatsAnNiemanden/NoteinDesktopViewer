@@ -59,7 +59,7 @@ public partial class MainWindow : Window
         {
             SourceComboBox.SelectedIndex = 0;
         }
-        
+
         UpdateSourceUI();
     }
 
@@ -378,6 +378,8 @@ public partial class MainWindow : Window
             var html = BuildPdfViewerHtml(base64);
 
             _pdfServer ??= new PdfViewerServer();
+            _pdfServer.OnReexportRequested -= TriggerReexport; // Prevent duplicate handlers
+            _pdfServer.OnReexportRequested += TriggerReexport;
             _pdfServer.SetContent(html);
 
             PdfPlaceholder.IsVisible = false;
@@ -392,7 +394,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private static string BuildPdfViewerHtml(string base64Pdf)
+    private string BuildPdfViewerHtml(string base64Pdf)
     {
         return $$"""
         <!DOCTYPE html>
@@ -403,10 +405,29 @@ public partial class MainWindow : Window
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body { background: #525659; overflow: auto; }
                 canvas { display: block; margin: 8px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+                #controls { position: fixed; top: 10px; right: 20px; background: rgba(40,40,40,0.8); color: white; padding: 8px 12px; border-radius: 6px; font-family: sans-serif; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 8px; }
+                button { background: #337ab7; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
+                button:hover { background: #286090; }
             </style>
         </head>
         <body>
-            <div id="viewer"></div>
+            <svg style="display:none;">
+                <filter id="stroke-darken">
+                    <feComponentTransfer>
+                        <feFuncR type="gamma" id="gammaR" amplitude="1" exponent="1" offset="0"/>
+                        <feFuncG type="gamma" id="gammaG" amplitude="1" exponent="1" offset="0"/>
+                        <feFuncB type="gamma" id="gammaB" amplitude="1" exponent="1" offset="0"/>
+                    </feComponentTransfer>
+                </filter>
+            </svg>
+            <div id="controls">
+                <label for="darken">Darken Strokes:</label>
+                <input type="range" id="darken" min="1" max="5" step="0.2" value="1">
+                <span id="darken-val">Off</span>
+                <button id="reexport-btn">Re-export PDF</button>
+                <button id="reset-btn" style="background: #d9534f;">Reset</button>
+            </div>
+            <div id="viewer" style="filter: none"></div>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
             <script type="module">
                 import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
@@ -415,6 +436,38 @@ public partial class MainWindow : Window
                 const pdfUrl = 'data:application/pdf;base64,{{base64Pdf}}';
                 const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
                 const viewer = document.getElementById('viewer');
+
+                const darkenInput = document.getElementById('darken');
+                const darkenVal = document.getElementById('darken-val');
+                const gammaR = document.getElementById('gammaR');
+                const gammaG = document.getElementById('gammaG');
+                const gammaB = document.getElementById('gammaB');
+                
+                function updateFilter() {
+                    const e = darkenInput.value;
+                    darkenVal.textContent = e == 1 ? 'Off' : e;
+                    
+                    gammaR.setAttribute('exponent', e);
+                    gammaG.setAttribute('exponent', e);
+                    gammaB.setAttribute('exponent', e);
+                    
+                    if (e == 1) {
+                        viewer.style.filter = 'none';
+                    } else {
+                        viewer.style.filter = 'url(#stroke-darken)';
+                    }
+                }
+                
+                darkenInput.addEventListener('input', updateFilter);
+                
+                document.getElementById('reexport-btn').addEventListener('click', () => {
+                    const e = darkenInput.value;
+                    fetch('/reexport?darken=' + e);
+                });
+
+                document.getElementById('reset-btn').addEventListener('click', () => {
+                    fetch('/reexport?darken=1');
+                });
 
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
@@ -522,6 +575,57 @@ public partial class MainWindow : Window
     {
         var licensesWindow = new LicensesWindow();
         licensesWindow.ShowDialog(this);
+    }
+
+    private void TriggerReexport(double factor)
+    {
+        Dispatcher.UIThread.Post(async () =>
+        {
+            if (FileListBox.SelectedItem is not FileItem selectedItem)
+                return;
+            if (selectedItem.FileName == "(No files found)") return;
+
+            if (_settings != null)
+            {
+                _settings.StrokeDarkenFactor = factor;
+                _settings.Save();
+            }
+
+            LoadingPanel.IsVisible = true;
+            LoadingText.Text = "Re-exporting PDF...";
+            string fileNameToRestore = selectedItem.FileName;
+            try
+            {
+                var pdfName = Path.GetFileNameWithoutExtension(fileNameToRestore) + ".pdf";
+                var pdfPath = Path.Combine(_activeService.LocalPdfFolder, pdfName);
+                
+                if (File.Exists(pdfPath))
+                {
+                    File.Delete(pdfPath);
+                }
+                await SyncAndDisplayFilesAsync();
+
+                // Restore selection
+                var items = FileListBox.ItemsSource as IEnumerable<FileItem>;
+                if (items != null)
+                {
+                    var itemToSelect = items.FirstOrDefault(i => i.FileName == fileNameToRestore);
+                    if (itemToSelect != null)
+                    {
+                        FileListBox.SelectedItem = itemToSelect;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ErrorText.Text = $"Failed to re-export PDF: {ex.Message}";
+                ErrorText.IsVisible = true;
+            }
+            finally
+            {
+                LoadingPanel.IsVisible = false;
+            }
+        });
     }
 
     protected override void OnClosed(EventArgs e)
