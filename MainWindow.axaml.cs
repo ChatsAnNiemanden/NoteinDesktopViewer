@@ -348,7 +348,6 @@ public partial class MainWindow : Window
         var regex = new Regex(@"(?i)[_-]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
         return regex.Replace(nameWithoutExt, "");
     }
-
     private async void OnFileSelected(object? sender, SelectionChangedEventArgs e)
     {
         if (FileListBox.SelectedItem is not FileItem selectedItem)
@@ -371,8 +370,6 @@ public partial class MainWindow : Window
 
         try
         {
-            // Read PDF as base64 and load into PDF.js viewer via local HTTP server.
-            // Using localhost instead of file:// avoids WebKitGTK blocking CDN scripts on Linux.
             var pdfBytes = await File.ReadAllBytesAsync(pdfPath);
             var base64 = Convert.ToBase64String(pdfBytes);
             var html = BuildPdfViewerHtml(base64);
@@ -433,52 +430,71 @@ public partial class MainWindow : Window
                 import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 
-                const pdfUrl = 'data:application/pdf;base64,{{base64Pdf}}';
-                const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
                 const viewer = document.getElementById('viewer');
-
                 const darkenInput = document.getElementById('darken');
                 const darkenVal = document.getElementById('darken-val');
                 const gammaR = document.getElementById('gammaR');
                 const gammaG = document.getElementById('gammaG');
                 const gammaB = document.getElementById('gammaB');
+                const reexportBtn = document.getElementById('reexport-btn');
+                const resetBtn = document.getElementById('reset-btn');
                 
                 function updateFilter() {
                     const e = darkenInput.value;
                     darkenVal.textContent = e == 1 ? 'Off' : e;
-                    
                     gammaR.setAttribute('exponent', e);
                     gammaG.setAttribute('exponent', e);
                     gammaB.setAttribute('exponent', e);
-                    
-                    if (e == 1) {
-                        viewer.style.filter = 'none';
-                    } else {
-                        viewer.style.filter = 'url(#stroke-darken)';
-                    }
+                    viewer.style.filter = e == 1 ? 'none' : 'url(#stroke-darken)';
                 }
                 
                 darkenInput.addEventListener('input', updateFilter);
-                
-                document.getElementById('reexport-btn').addEventListener('click', () => {
-                    const e = darkenInput.value;
-                    fetch('/reexport?darken=' + e);
-                });
 
-                document.getElementById('reset-btn').addEventListener('click', () => {
-                    fetch('/reexport?darken=1');
-                });
-
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const scale = 1.5;
-                    const viewport = page.getViewport({ scale });
-                    const canvas = document.createElement('canvas');
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    viewer.appendChild(canvas);
-                    await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                async function renderPdf(base64Data) {
+                    const pdfUrl = 'data:application/pdf;base64,' + base64Data;
+                    const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+                    
+                    // Maintain height to prevent scroll jumping while rendering
+                    const oldScroll = window.scrollY;
+                    viewer.style.minHeight = viewer.clientHeight + 'px';
+                    viewer.innerHTML = '';
+                    
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const scale = 1.5;
+                        const viewport = page.getViewport({ scale });
+                        const canvas = document.createElement('canvas');
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+                        viewer.appendChild(canvas);
+                        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                    }
+                    viewer.style.minHeight = '0px';
+                    window.scrollTo(0, oldScroll);
                 }
+
+                async function applyExport(darkenValue) {
+                    reexportBtn.disabled = true;
+                    resetBtn.disabled = true;
+                    try {
+                        const res = await fetch('/reexport?darken=' + darkenValue);
+                        const newBase64 = await res.text();
+                        if (newBase64 && newBase64.length > 0 && !newBase64.startsWith("HTTP")) {
+                            darkenInput.value = 1;
+                            updateFilter();
+                            await renderPdf(newBase64);
+                        }
+                    } finally {
+                        reexportBtn.disabled = false;
+                        resetBtn.disabled = false;
+                    }
+                }
+                
+                reexportBtn.addEventListener('click', () => applyExport(darkenInput.value));
+                resetBtn.addEventListener('click', () => applyExport(1));
+
+                // Initial load
+                renderPdf('{{base64Pdf}}');
             </script>
         </body>
         </html>
@@ -577,55 +593,73 @@ public partial class MainWindow : Window
         licensesWindow.ShowDialog(this);
     }
 
-    private void TriggerReexport(double factor)
+    private async Task<string> TriggerReexport(double factor)
     {
-        Dispatcher.UIThread.Post(async () =>
+        FileItem? selectedItem = null;
+        await Dispatcher.UIThread.InvokeAsync(() => 
+        { 
+            selectedItem = FileListBox.SelectedItem as FileItem;
+        });
+
+        if (selectedItem == null || selectedItem.FileName == "(No files found)")
+            return "";
+
+        if (_settings != null)
         {
-            if (FileListBox.SelectedItem is not FileItem selectedItem)
-                return;
-            if (selectedItem.FileName == "(No files found)") return;
+            _settings.StrokeDarkenFactor = factor;
+            _settings.Save();
+        }
 
-            if (_settings != null)
-            {
-                _settings.StrokeDarkenFactor = factor;
-                _settings.Save();
-            }
-
+        await Dispatcher.UIThread.InvokeAsync(() => 
+        {
             LoadingPanel.IsVisible = true;
             LoadingText.Text = "Re-exporting PDF...";
-            string fileNameToRestore = selectedItem.FileName;
-            try
-            {
-                var pdfName = Path.GetFileNameWithoutExtension(fileNameToRestore) + ".pdf";
-                var pdfPath = Path.Combine(_activeService.LocalPdfFolder, pdfName);
-                
-                if (File.Exists(pdfPath))
-                {
-                    File.Delete(pdfPath);
-                }
-                await SyncAndDisplayFilesAsync();
+        });
 
-                // Restore selection
-                var items = FileListBox.ItemsSource as IEnumerable<FileItem>;
-                if (items != null)
-                {
-                    var itemToSelect = items.FirstOrDefault(i => i.FileName == fileNameToRestore);
-                    if (itemToSelect != null)
-                    {
-                        FileListBox.SelectedItem = itemToSelect;
-                    }
-                }
+        string fileName = selectedItem.FileName;
+        try
+        {
+            var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
+            var pdfPath = Path.Combine(_activeService.LocalPdfFolder, pdfName);
+            
+            if (File.Exists(pdfPath))
+            {
+                File.Delete(pdfPath);
             }
-            catch (Exception ex)
+            
+            // Regenerate PDF silently
+            await _activeService.ConvertAllToPdfAsync();
+
+            if (File.Exists(pdfPath))
+            {
+                var pdfBytes = await File.ReadAllBytesAsync(pdfPath);
+                var base64 = Convert.ToBase64String(pdfBytes);
+                
+                await Dispatcher.UIThread.InvokeAsync(() => 
+                {
+                    var html = BuildPdfViewerHtml(base64);
+                    if (_pdfServer != null)
+                        _pdfServer.SetContent(html);
+                });
+                return base64;
+            }
+        }
+        catch (Exception ex)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => 
             {
                 ErrorText.Text = $"Failed to re-export PDF: {ex.Message}";
                 ErrorText.IsVisible = true;
-            }
-            finally
+            });
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => 
             {
                 LoadingPanel.IsVisible = false;
-            }
-        });
+            });
+        }
+        return "";
     }
 
     protected override void OnClosed(EventArgs e)

@@ -54,7 +54,7 @@ internal sealed class PdfViewerServer : IDisposable
         }
     }
 
-    public event Action<double>? OnReexportRequested;
+    public event Func<double, Task<string>>? OnReexportRequested;
 
     private async Task HandleClientAsync(TcpClient client)
     {
@@ -83,19 +83,32 @@ internal sealed class PdfViewerServer : IDisposable
             }
             
             var fullReq = reqBuilder.ToString();
-            if (fullReq.StartsWith("GET /reexport?darken="))
+            if (fullReq.StartsWith("GET /reexport?"))
             {
-                var endIdx = fullReq.IndexOf(' ', 21);
+                var endIdx = fullReq.IndexOf(' ', 14);
                 if (endIdx != -1)
                 {
-                    var valStr = fullReq.Substring(21, endIdx - 21);
-                    if (double.TryParse(valStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                    var queryStr = fullReq.Substring(14, endIdx - 14); // e.g. "darken=1.5"
+                    var parts = queryStr.Split('&');
+                    double darken = 1.0;
+                    foreach (var part in parts)
                     {
-                        OnReexportRequested?.Invoke(val);
+                        if (part.StartsWith("darken="))
+                            double.TryParse(part.Substring(7), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out darken);
+                    }
+                    
+                    if (OnReexportRequested != null)
+                    {
+                        var base64 = await OnReexportRequested.Invoke(darken);
+                        var bodyBytes = Encoding.UTF8.GetBytes(base64);
+                        var okHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n");
+                        await stream.WriteAsync(okHeader);
+                        await stream.WriteAsync(bodyBytes);
+                        return;
                     }
                 }
-                var okHeader = Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
-                await stream.WriteAsync(okHeader);
+                var errHeader = Encoding.ASCII.GetBytes("HTTP/1.1 500 ERROR\r\nConnection: close\r\n\r\n");
+                await stream.WriteAsync(errHeader);
                 return;
             }
 
