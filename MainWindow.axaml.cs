@@ -402,7 +402,7 @@ public partial class MainWindow : Window
                 * { margin: 0; padding: 0; box-sizing: border-box; }
                 body { background: #525659; overflow: auto; }
                 canvas { display: block; margin: 8px auto; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
-                #controls { position: fixed; top: 10px; right: 20px; background: rgba(40,40,40,0.8); color: white; padding: 8px 12px; border-radius: 6px; font-family: sans-serif; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 8px; }
+                #controls { position: fixed; top: 10px; right: 20px; background: rgba(40,40,40,0.8); color: white; padding: 8px 12px; border-radius: 6px; font-family: sans-serif; z-index: 1000; box-shadow: 0 2px 10px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 8px; transform-origin: top right; }
                 button { background: #337ab7; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; }
                 button:hover { background: #286090; }
             </style>
@@ -492,6 +492,24 @@ public partial class MainWindow : Window
                 
                 reexportBtn.addEventListener('click', () => applyExport(darkenInput.value));
                 resetBtn.addEventListener('click', () => applyExport(1));
+
+                // Counteract zoom so controls don't grow huge
+                let initialRatio = window.devicePixelRatio || 1;
+                function adjustControls() {
+                    const vvScale = window.visualViewport ? window.visualViewport.scale : 1;
+                    const pageZoom = (window.devicePixelRatio || 1) / initialRatio;
+                    const totalScale = vvScale * pageZoom;
+                    const controls = document.getElementById('controls');
+                    if (controls) {
+                        controls.style.transform = `scale(${1 / totalScale})`;
+                    }
+                }
+                if (window.visualViewport) {
+                    window.visualViewport.addEventListener('resize', adjustControls);
+                    window.visualViewport.addEventListener('scroll', adjustControls);
+                }
+                window.addEventListener('resize', adjustControls);
+                adjustControls();
 
                 // Initial load
                 renderPdf('{{base64Pdf}}');
