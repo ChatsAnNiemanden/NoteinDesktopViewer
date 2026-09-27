@@ -1,0 +1,162 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #525659;
+            overflow: auto;
+        }
+
+        canvas {
+            display: block;
+            margin: 8px auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        #controls {
+            position: fixed;
+            top: 10px;
+            right: 20px;
+            background: rgba(40,40,40,0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-family: sans-serif;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transform-origin: top right;
+        }
+
+        button {
+            background: #337ab7;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+            button:hover {
+                background: #286090;
+            }
+    </style>
+</head>
+<body>
+    <svg style="display:none;">
+        <filter id="stroke-darken">
+            <feComponentTransfer>
+                <feFuncR type="gamma" id="gammaR" amplitude="1" exponent="1" offset="0" />
+                <feFuncG type="gamma" id="gammaG" amplitude="1" exponent="1" offset="0" />
+                <feFuncB type="gamma" id="gammaB" amplitude="1" exponent="1" offset="0" />
+            </feComponentTransfer>
+        </filter>
+    </svg>
+    <div id="controls">
+        <label for="darken">Darken Strokes:</label>
+        <input type="range" id="darken" min="1" max="5" step="0.2" value="1">
+        <span id="darken-val">Off</span>
+        <button id="reexport-btn">Re-export PDF</button>
+        <button id="reset-btn" style="background: #d9534f;">Reset</button>
+    </div>
+    <div id="viewer" style="filter: none"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs" type="module"></script>
+    <script type="module">
+        import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
+
+        const viewer = document.getElementById('viewer');
+        const darkenInput = document.getElementById('darken');
+        const darkenVal = document.getElementById('darken-val');
+        const gammaR = document.getElementById('gammaR');
+        const gammaG = document.getElementById('gammaG');
+        const gammaB = document.getElementById('gammaB');
+        const reexportBtn = document.getElementById('reexport-btn');
+        const resetBtn = document.getElementById('reset-btn');
+
+        function updateFilter() {
+            const e = darkenInput.value;
+            darkenVal.textContent = e == 1 ? 'Off' : e;
+            gammaR.setAttribute('exponent', e);
+            gammaG.setAttribute('exponent', e);
+            gammaB.setAttribute('exponent', e);
+            viewer.style.filter = e == 1 ? 'none' : 'url(#stroke-darken)';
+        }
+
+        darkenInput.addEventListener('input', updateFilter);
+
+        async function renderPdf(base64Data) {
+            const pdfUrl = 'data:application/pdf;base64,' + base64Data;
+            const pdf = await pdfjsLib.getDocument(pdfUrl).promise;
+
+            // Maintain height to prevent scroll jumping while rendering
+            const oldScroll = window.scrollY;
+            viewer.style.minHeight = viewer.clientHeight + 'px';
+            viewer.innerHTML = '';
+
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const scale = 1.5;
+                const viewport = page.getViewport({ scale });
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                viewer.appendChild(canvas);
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+            }
+            viewer.style.minHeight = '0px';
+            window.scrollTo(0, oldScroll);
+        }
+
+        async function applyExport(darkenValue) {
+            reexportBtn.disabled = true;
+            resetBtn.disabled = true;
+            try {
+                const res = await fetch('/reexport?darken=' + darkenValue);
+                const newBase64 = await res.text();
+                if (newBase64 && newBase64.length > 0 && !newBase64.startsWith("HTTP")) {
+                    darkenInput.value = 1;
+                    updateFilter();
+                    await renderPdf(newBase64);
+                }
+            } finally {
+                reexportBtn.disabled = false;
+                resetBtn.disabled = false;
+            }
+        }
+
+        reexportBtn.addEventListener('click', () => applyExport(darkenInput.value));
+        resetBtn.addEventListener('click', () => applyExport(1));
+
+        // Counteract zoom so controls don't grow huge
+        let initialRatio = window.devicePixelRatio || 1;
+        function adjustControls() {
+            const vvScale = window.visualViewport ? window.visualViewport.scale : 1;
+            const pageZoom = (window.devicePixelRatio || 1) / initialRatio;
+            const totalScale = vvScale * pageZoom;
+            const controls = document.getElementById('controls');
+            if (controls) {
+                controls.style.transform = `scale(${1 / totalScale})`;
+            }
+        }
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', adjustControls);
+            window.visualViewport.addEventListener('scroll', adjustControls);
+        }
+        window.addEventListener('resize', adjustControls);
+        adjustControls();
+
+        // Initial load
+        renderPdf('{{base64Pdf}}');
+    </script>
+</body>
+</html>
