@@ -106,7 +106,7 @@ public class GoogleDriveService : INoteSourceService
         do
         {
             var listRequest = _driveService.Files.List();
-            listRequest.Q = $"'{folder.Id}' in parents and trashed = false";
+            listRequest.Q = $"'{folder.Id}' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'";
             listRequest.Fields = "nextPageToken, files(id, name, modifiedTime)";
             listRequest.PageSize = 100;
             listRequest.PageToken = pageToken;
@@ -137,9 +137,24 @@ public class GoogleDriveService : INoteSourceService
         if (dir != null)
             Directory.CreateDirectory(dir);
 
-        using var fileStream = new FileStream(destPath, FileMode.Create, FileAccess.Write);
-        var request = _driveService.Files.Get(fileId);
-        await request.DownloadAsync(fileStream);
+        var tempPath = destPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var request = _driveService.Files.Get(fileId);
+                await request.DownloadAsync(fileStream);
+            }
+
+            File.Move(tempPath, destPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+        }
     }
 
     /// <summary>
@@ -183,7 +198,7 @@ public class GoogleDriveService : INoteSourceService
             await DownloadFileAsync(file.Id, localPath);
 
             if (file.ModifiedTime.HasValue)
-                metadata.UpdateEntry(file.Id, file.Name, file.ModifiedTime.Value);
+                await metadata.UpdateEntryAsync(file.Id, file.Name, file.ModifiedTime.Value, "GoogleDrive");
 
             downloaded++;
         }

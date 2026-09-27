@@ -11,6 +11,7 @@ using Avalonia.Media.Imaging;
 using System.Text.RegularExpressions;
 using NoteinDesktopViewer.Services;
 using NoteinDesktopViewer.Helpers;
+using System.Threading;
 
 namespace NoteinDesktopViewer;
 
@@ -31,6 +32,9 @@ public partial class MainWindow : Window
     private INoteSourceService _activeService = null!;
     private readonly AppSettings _settings;
     private PdfViewerServer? _pdfServer;
+    private readonly SemaphoreSlim _syncLock = new(1, 1);
+    private bool _isSigningIn = false;
+    private bool _initializing = false;
 
     public MainWindow()
     {
@@ -53,6 +57,7 @@ public partial class MainWindow : Window
         }
 #endif
 
+        _initializing = true;
         if (_settings.LastSourceIndex >= 0 && _settings.LastSourceIndex < SourceComboBox.Items.Count)
         {
             SourceComboBox.SelectedIndex = _settings.LastSourceIndex;
@@ -61,12 +66,15 @@ public partial class MainWindow : Window
         {
             SourceComboBox.SelectedIndex = 0;
         }
+        _initializing = false;
 
         UpdateSourceUI();
     }
 
     private void OnSourceChanged(object? sender, SelectionChangedEventArgs e)
     {
+        if (_initializing) return;
+
         UpdateSourceUI();
         
         if (_settings != null && SourceComboBox != null)
@@ -163,39 +171,41 @@ public partial class MainWindow : Window
     private async void SyncOnStartupWhenLoggedIn()
     {
 #if !DISABLE_GOOGLE_DRIVE
-        if (_driveService.HasSavedToken)
+        if (_isSigningIn || !_driveService.HasSavedToken)
+            return;
+
+        _isSigningIn = true;
+        LoginButton.IsVisible = false;
+        LogoutButton.IsVisible = true;
+        ManuelSyncButton.IsEnabled = true;
+        LogoutButton.IsEnabled = false; // Disable until loaded
+        LoadingPanel.IsVisible = true;
+        LoadingText.Text = "Signing in...";
+        StatusText.Text = "Signing in...";
+
+        try
         {
-            LoginButton.IsVisible = false;
-            LogoutButton.IsVisible = true;
-            ManuelSyncButton.IsEnabled = true;
-            LogoutButton.IsEnabled = false; // Disable until loaded
-            LoadingPanel.IsVisible = true;
-            LoadingText.Text = "Signing in...";
-            StatusText.Text = "Signing in...";
+            var email = await _driveService.LoginAsync();
+            StatusText.Text = email;
+            LogoutButton.IsEnabled = true;
 
-            try
+            if (_activeService == _driveService)
             {
-                var email = await _driveService.LoginAsync();
-                StatusText.Text = email;
-                LogoutButton.IsEnabled = true;
-
-                if (_activeService == _driveService)
-                {
-                    await SyncAndDisplayFilesAsync();
-                }
+                await SyncAndDisplayFilesAsync();
             }
-            catch (Exception ex)
-            {
-                ErrorText.Text = $"Login failed: {ex.Message}";
-                ErrorText.IsVisible = true;
-                StatusText.Text = "Not signed in";
-                LoginButton.IsVisible = true;
-                LogoutButton.IsVisible = false;
-            }
-            finally
-            {
-                LoadingPanel.IsVisible = false;
-            }
+        }
+        catch (Exception ex)
+        {
+            ErrorText.Text = $"Login failed: {ex.Message}";
+            ErrorText.IsVisible = true;
+            StatusText.Text = "Not signed in";
+            LoginButton.IsVisible = true;
+            LogoutButton.IsVisible = false;
+        }
+        finally
+        {
+            _isSigningIn = false;
+            LoadingPanel.IsVisible = false;
         }
 #endif
     }
@@ -281,6 +291,12 @@ public partial class MainWindow : Window
 
     private async Task SyncAndDisplayFilesAsync()
     {
+        if (!await _syncLock.WaitAsync(0))
+        {
+            // Another sync is already running
+            return;
+        }
+
         LoadingPanel.IsVisible = true;
         ErrorText.IsVisible = false;
         LogBox.Text = "";
@@ -341,6 +357,7 @@ public partial class MainWindow : Window
         finally
         {
             LoadingPanel.IsVisible = false;
+            _syncLock.Release();
         }
     }
 

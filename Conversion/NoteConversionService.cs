@@ -18,9 +18,12 @@ public static class NoteConversionService
     /// </summary>
     /// <param name="noteFiles">The list of note files to convert.</param>
     /// <param name="pdfFolder">The output folder for PDFs.</param>
-    /// <param name="progress">Optional progress reporter.</param>
+    /// <param name="onFileConverted">Optional callback invoked after a file is successfully converted.</param>
     public static async Task ConvertAllToPdfAsync(
-        IReadOnlyList<FileInfo> noteFiles, string pdfFolder, IProgress<string>? progress = null)
+        IReadOnlyList<FileInfo> noteFiles, 
+        string pdfFolder, 
+        IProgress<string>? progress = null,
+        Func<FileInfo, Task>? onFileConverted = null)
     {
         Directory.CreateDirectory(pdfFolder);
 
@@ -52,6 +55,10 @@ public static class NoteConversionService
             {
                 await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath));
                 converted++;
+                if (onFileConverted != null)
+                {
+                    await onFileConverted(noteFile);
+                }
             }
             catch (Exception ex)
             {
