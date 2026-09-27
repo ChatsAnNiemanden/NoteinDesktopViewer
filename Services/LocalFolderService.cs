@@ -50,8 +50,6 @@ public class LocalFolderService : INoteSourceService
 
     public async Task ConvertAllToPdfAsync(IProgress<string>? progress = null)
     {
-        Directory.CreateDirectory(LocalPdfFolder);
-
         if (!Directory.Exists(SourceFolder))
         {
             progress?.Report("Local folder does not exist.");
@@ -64,42 +62,6 @@ public class LocalFolderService : INoteSourceService
             .Select(f => new FileInfo(f))
             .ToList();
 
-        if (noteFiles.Count == 0)
-        {
-            progress?.Report("No files to convert.");
-            return;
-        }
-
-        int converted = 0;
-        int skipped = 0;
-
-        for (int i = 0; i < noteFiles.Count; i++)
-        {
-            var noteFile = noteFiles[i];
-            var pdfName = Path.GetFileNameWithoutExtension(noteFile.Name) + ".pdf";
-            var pdfPath = Path.Combine(LocalPdfFolder, pdfName);
-
-            if (File.Exists(pdfPath) && File.GetLastWriteTimeUtc(pdfPath) >= noteFile.LastWriteTimeUtc)
-            {
-                skipped++;
-                continue;
-            }
-
-            progress?.Report($"Converting {i + 1}/{noteFiles.Count}: {noteFile.Name}");
-
-            try
-            {
-                await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath));
-                converted++;
-            }
-            catch (Exception ex)
-            {
-                progress?.Report($"Failed to convert {noteFile.Name}: {ex.Message}");
-            }
-        }
-
-        progress?.Report(converted == 0
-            ? $"All {noteFiles.Count} PDFs up to date."
-            : $"Converted {converted} file(s) to PDF, {skipped} already up to date.");
+        await NoteConversionService.ConvertAllToPdfAsync(noteFiles, LocalPdfFolder, progress);
     }
 }
