@@ -19,11 +19,13 @@ public static class NoteConversionService
     /// <param name="noteFiles">The list of note files to convert.</param>
     /// <param name="pdfFolder">The output folder for PDFs.</param>
     /// <param name="onFileConverted">Optional callback invoked after a file is successfully converted.</param>
+    /// <param name="onFileFailed">Optional callback invoked after a file fails to convert.</param>
     public static async Task ConvertAllToPdfAsync(
         IReadOnlyList<FileInfo> noteFiles, 
         string pdfFolder, 
         IProgress<string>? progress = null,
-        Func<FileInfo, Task>? onFileConverted = null)
+        Func<FileInfo, Task>? onFileConverted = null,
+        Func<FileInfo, Exception, Task>? onFileFailed = null)
     {
         Directory.CreateDirectory(pdfFolder);
 
@@ -53,16 +55,32 @@ public static class NoteConversionService
 
             try
             {
-                await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath)).ConfigureAwait(false);
-                converted++;
-                if (onFileConverted != null)
+                bool success = await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath)).ConfigureAwait(false);
+                if (success && File.Exists(pdfPath))
                 {
-                    await onFileConverted(noteFile).ConfigureAwait(false);
+                    converted++;
+                    if (onFileConverted != null)
+                    {
+                        await onFileConverted(noteFile).ConfigureAwait(false);
+                    }
+                }
+                else
+                {
+                    var failEx = new InvalidOperationException($"Conversion of {noteFile.Name} did not produce a valid PDF.");
+                    progress?.Report($"Failed to convert {noteFile.Name}: {failEx.Message}");
+                    if (onFileFailed != null)
+                    {
+                        await onFileFailed(noteFile, failEx).ConfigureAwait(false);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 progress?.Report($"Failed to convert {noteFile.Name}: {ex.Message}");
+                if (onFileFailed != null)
+                {
+                    await onFileFailed(noteFile, ex).ConfigureAwait(false);
+                }
             }
         }
 

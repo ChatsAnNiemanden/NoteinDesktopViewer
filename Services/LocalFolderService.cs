@@ -90,7 +90,10 @@ public class LocalFolderService : INoteSourceService
         });
     }
 
-    public async Task ConvertAllToPdfAsync(IProgress<string>? progress = null, Action<string>? onFileConverted = null)
+    public async Task ConvertAllToPdfAsync(
+        IProgress<string>? progress = null, 
+        Action<string>? onFileConverted = null, 
+        Action<string>? onFileFailed = null)
     {
         await Task.Run(async () =>
         {
@@ -120,6 +123,10 @@ public class LocalFolderService : INoteSourceService
                         noteFile.LastWriteTimeUtc, 
                         "LocalFolder");
                     onFileConverted?.Invoke(noteFile.Name);
+                },
+                async (noteFile, ex) =>
+                {
+                    onFileFailed?.Invoke(noteFile.Name);
                 });
         });
     }

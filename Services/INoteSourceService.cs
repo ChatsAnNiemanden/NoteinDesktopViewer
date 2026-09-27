@@ -9,5 +9,5 @@ public interface INoteSourceService
 {
     string LocalPdfFolder { get; }
     Task<List<DriveFileInfo>> SyncFilesAsync(IProgress<string>? progress = null);
-    Task ConvertAllToPdfAsync(IProgress<string>? progress = null, Action<string>? onFileConverted = null);
+    Task ConvertAllToPdfAsync(IProgress<string>? progress = null, Action<string>? onFileConverted = null, Action<string>? onFileFailed = null);
 }

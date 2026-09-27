@@ -237,7 +237,10 @@ public class GoogleDriveService : INoteSourceService
     /// Converts all downloaded note files in the sync folder to PDFs.
     /// Skips files that already have a corresponding up-to-date PDF.
     /// </summary>
-    public async Task ConvertAllToPdfAsync(IProgress<string>? progress = null, Action<string>? onFileConverted = null)
+    public async Task ConvertAllToPdfAsync(
+        IProgress<string>? progress = null, 
+        Action<string>? onFileConverted = null, 
+        Action<string>? onFileFailed = null)
     {
         await Task.Run(async () =>
         {
@@ -252,6 +255,10 @@ public class GoogleDriveService : INoteSourceService
                 async noteFile =>
                 {
                     onFileConverted?.Invoke(noteFile.Name);
+                },
+                async (noteFile, ex) =>
+                {
+                    onFileFailed?.Invoke(noteFile.Name);
                 });
         });
     }

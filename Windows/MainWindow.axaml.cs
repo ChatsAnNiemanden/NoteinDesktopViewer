@@ -379,7 +379,7 @@ public partial class MainWindow : Window
             else
             {
                 var activePdfFolder = _activeService.LocalPdfFolder;
-                var existingItemsMap = _fileItems.ToDictionary(x => x.FileName);
+                var existingItemsMap = _fileItems.Where(x => x.FileName != "(No files found)").ToDictionary(x => x.FileName);
                 var newItems = new List<FileItem>();
 
                 foreach (var f in files)
@@ -388,19 +388,22 @@ public partial class MainWindow : Window
                     var pdfPath = Path.Combine(activePdfFolder, pdfName);
                     bool hasPdf = File.Exists(pdfPath);
 
-                    if (existingItemsMap.TryGetValue(f.Name, out var existing))
+                    if (hasPdf)
                     {
-                        existing.HasPdf = hasPdf;
-                        newItems.Add(existing);
-                    }
-                    else
-                    {
-                        newItems.Add(new FileItem
+                        if (existingItemsMap.TryGetValue(f.Name, out var existing))
                         {
-                            FileName = f.Name,
-                            DisplayName = FormatDisplayName(f.Name),
-                            HasPdf = hasPdf
-                        });
+                            existing.HasPdf = true;
+                            newItems.Add(existing);
+                        }
+                        else
+                        {
+                            newItems.Add(new FileItem
+                            {
+                                FileName = f.Name,
+                                DisplayName = FormatDisplayName(f.Name),
+                                HasPdf = true
+                            });
+                        }
                     }
                 }
 
@@ -436,50 +439,95 @@ public partial class MainWindow : Window
             }
 
             // Convert downloaded notes to PDFs, capturing Console output to the log box
-            await ConvertWithLogCaptureAsync(progress, onFileConverted: fileName =>
-            {
-                var activePdfFolder = _activeService.LocalPdfFolder;
-                var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
-                var pngName = Path.GetFileNameWithoutExtension(fileName) + ".png";
-                var pdfPath = Path.Combine(activePdfFolder, pdfName);
-                var pngPath = Path.Combine(activePdfFolder, pngName);
-
-                Bitmap? bmp = null;
-                if (File.Exists(pngPath))
+            await ConvertWithLogCaptureAsync(
+                progress, 
+                onFileConverted: fileName =>
                 {
-                    try { bmp = new Bitmap(pngPath); }
-                    catch { }
-                }
+                    var activePdfFolder = _activeService.LocalPdfFolder;
+                    var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
+                    var pngName = Path.GetFileNameWithoutExtension(fileName) + ".png";
+                    var pdfPath = Path.Combine(activePdfFolder, pdfName);
+                    var pngPath = Path.Combine(activePdfFolder, pngName);
 
-                Dispatcher.UIThread.Post(() =>
-                {
-                    var existing = _fileItems.FirstOrDefault(x => x.FileName == fileName);
-                    if (existing != null)
+                    Bitmap? bmp = null;
+                    if (File.Exists(pngPath))
                     {
-                        existing.HasPdf = File.Exists(pdfPath);
-                        if (bmp != null)
+                        try { bmp = new Bitmap(pngPath); }
+                        catch { }
+                    }
+
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var dummy = _fileItems.FirstOrDefault(x => x.FileName == "(No files found)");
+                        if (dummy != null)
                         {
-                            existing.PreviewImage = bmp;
+                            _fileItems.Remove(dummy);
                         }
 
-                        if (FileListBox.SelectedItem is FileItem selected && selected.FileName == fileName)
+                        var existing = _fileItems.FirstOrDefault(x => x.FileName == fileName);
+                        if (existing != null)
                         {
-                            var _ = LoadPdfForItemAsync(selected);
+                            existing.HasPdf = File.Exists(pdfPath);
+                            if (bmp != null)
+                            {
+                                existing.PreviewImage = bmp;
+                            }
+
+                            if (FileListBox.SelectedItem is FileItem selected && selected.FileName == fileName)
+                            {
+                                var _ = LoadPdfForItemAsync(selected);
+                            }
                         }
-                    }
-                    else
-                    {
-                        var newItem = new FileItem
+                        else
                         {
-                            FileName = fileName,
-                            DisplayName = FormatDisplayName(fileName),
-                            PreviewImage = bmp,
-                            HasPdf = File.Exists(pdfPath)
-                        };
-                        _fileItems.Add(newItem);
-                    }
+                            var newItem = new FileItem
+                            {
+                                FileName = fileName,
+                                DisplayName = FormatDisplayName(fileName),
+                                PreviewImage = bmp,
+                                HasPdf = File.Exists(pdfPath)
+                            };
+                            _fileItems.Add(newItem);
+                        }
+                    });
+                },
+                onFileFailed: fileName =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var dummy = _fileItems.FirstOrDefault(x => x.FileName == "(No files found)");
+                        if (dummy != null)
+                        {
+                            _fileItems.Remove(dummy);
+                        }
+
+                        var existing = _fileItems.FirstOrDefault(x => x.FileName == fileName);
+                        if (existing != null)
+                        {
+                            existing.HasPdf = false;
+                        }
+                        else
+                        {
+                            var newItem = new FileItem
+                            {
+                                FileName = fileName,
+                                DisplayName = FormatDisplayName(fileName),
+                                HasPdf = false
+                            };
+                            _fileItems.Add(newItem);
+                        }
+                    });
                 });
-            });
+
+            if (_fileItems.Count == 0)
+            {
+                _fileItems.Add(new FileItem
+                {
+                    FileName = "(No files found)",
+                    DisplayName = "(No converted notes found)",
+                    HasPdf = true
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -558,7 +606,10 @@ public partial class MainWindow : Window
         return template.Replace("{{base64Pdf}}", base64Pdf);
     }
 
-    private async Task ConvertWithLogCaptureAsync(IProgress<string> progress, Action<string>? onFileConverted = null)
+    private async Task ConvertWithLogCaptureAsync(
+        IProgress<string> progress, 
+        Action<string>? onFileConverted = null,
+        Action<string>? onFileFailed = null)
     {
         // Redirect Console.Out and Console.Error to capture NoteinToPdf output
         var originalOut = Console.Out;
@@ -574,7 +625,7 @@ public partial class MainWindow : Window
         Console.SetError(logWriter);
         try
         {
-            await _activeService.ConvertAllToPdfAsync(progress, onFileConverted);
+            await _activeService.ConvertAllToPdfAsync(progress, onFileConverted, onFileFailed);
         }
         finally
         {
@@ -724,26 +775,38 @@ public partial class MainWindow : Window
             }
             
             // Regenerate PDF silently
-            await _activeService.ConvertAllToPdfAsync(onFileConverted: convertedName =>
-            {
-                var activePdfFolder = _activeService.LocalPdfFolder;
-                var pngName = Path.GetFileNameWithoutExtension(convertedName) + ".png";
-                var pngPath = Path.Combine(activePdfFolder, pngName);
-                Bitmap? bmp = null;
-                if (File.Exists(pngPath))
+            await _activeService.ConvertAllToPdfAsync(
+                onFileConverted: convertedName =>
                 {
-                    try { bmp = new Bitmap(pngPath); } catch { }
-                }
-                Dispatcher.UIThread.Post(() =>
-                {
-                    var existing = _fileItems.FirstOrDefault(x => x.FileName == convertedName);
-                    if (existing != null)
+                    var activePdfFolder = _activeService.LocalPdfFolder;
+                    var pngName = Path.GetFileNameWithoutExtension(convertedName) + ".png";
+                    var pngPath = Path.Combine(activePdfFolder, pngName);
+                    Bitmap? bmp = null;
+                    if (File.Exists(pngPath))
                     {
-                        existing.HasPdf = true;
-                        if (bmp != null) existing.PreviewImage = bmp;
+                        try { bmp = new Bitmap(pngPath); } catch { }
                     }
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var existing = _fileItems.FirstOrDefault(x => x.FileName == convertedName);
+                        if (existing != null)
+                        {
+                            existing.HasPdf = true;
+                            if (bmp != null) existing.PreviewImage = bmp;
+                        }
+                    });
+                },
+                onFileFailed: failedName =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        var existing = _fileItems.FirstOrDefault(x => x.FileName == failedName);
+                        if (existing != null)
+                        {
+                            existing.HasPdf = false;
+                        }
+                    });
                 });
-            });
 
             if (File.Exists(pdfPath))
             {
