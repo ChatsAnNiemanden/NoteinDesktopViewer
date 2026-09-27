@@ -691,7 +691,8 @@ namespace NoteinDesktopViewer.Conversion
             var candidates = new List<string>
             {
                 Path.Combine(noteDir.FullName, targetName),
-                Path.Combine(noteDir.FullName, $"note_local_uri_theme_{targetName}")
+                Path.Combine(noteDir.FullName, $"note_local_uri_theme_{targetName}"),
+                Path.Combine(noteDir.FullName, $"note_pdf_{targetName}")
             };
 
             foreach (var c in candidates)
@@ -964,8 +965,8 @@ namespace NoteinDesktopViewer.Conversion
                 {
                     try
                     {
-                        // Loads the first page of the background PDF
                         var form = XPdfForm.FromFile(bgPdfFile.FullName);
+                        form.PageIndex = Math.Min(bgPageIndex, form.PageCount - 1);
                         gfx.DrawImage(form, 0, 0, pageW, pageH);
                     }
                     catch (Exception ex)
