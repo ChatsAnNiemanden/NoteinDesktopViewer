@@ -53,11 +53,11 @@ public static class NoteConversionService
 
             try
             {
-                await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath));
+                await Task.Run(() => NoteinToPdf.ConvertSingleNote(noteFile, pdfPath)).ConfigureAwait(false);
                 converted++;
                 if (onFileConverted != null)
                 {
-                    await onFileConverted(noteFile);
+                    await onFileConverted(noteFile).ConfigureAwait(false);
                 }
             }
             catch (Exception ex)

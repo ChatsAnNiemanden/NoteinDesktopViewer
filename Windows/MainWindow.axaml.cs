@@ -2,9 +2,13 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -15,12 +19,51 @@ using System.Threading;
 
 namespace NoteinDesktopViewer;
 
-public class FileItem
+public class FileItem : INotifyPropertyChanged
 {
-    public string FileName { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
-    public Bitmap? PreviewImage { get; set; }
-    public bool HasPdf { get; set; }
+    private string _fileName = string.Empty;
+    private string _displayName = string.Empty;
+    private Bitmap? _previewImage;
+    private bool _hasPdf;
+
+    public string FileName
+    {
+        get => _fileName;
+        set => SetField(ref _fileName, value);
+    }
+
+    public string DisplayName
+    {
+        get => _displayName;
+        set => SetField(ref _displayName, value);
+    }
+
+    public Bitmap? PreviewImage
+    {
+        get => _previewImage;
+        set => SetField(ref _previewImage, value);
+    }
+
+    public bool HasPdf
+    {
+        get => _hasPdf;
+        set => SetField(ref _hasPdf, value);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    protected bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return false;
+        field = value;
+        OnPropertyChanged(propertyName);
+        return true;
+    }
 }
 
 public partial class MainWindow : Window
@@ -33,6 +76,11 @@ public partial class MainWindow : Window
     private readonly AppSettings _settings;
     private PdfViewerServer? _pdfServer;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
+    private readonly ObservableCollection<FileItem> _fileItems = new();
+    private readonly ConcurrentQueue<string> _logQueue = new();
+    private readonly DispatcherTimer _logFlushTimer;
+    private readonly StringBuilder _logContent = new();
+    private const int MaxLogCharacters = 50_000;
     private bool _isSigningIn = false;
     private bool _initializing = false;
 
@@ -40,6 +88,13 @@ public partial class MainWindow : Window
     {
         _settings = AppSettings.Load();
         InitializeComponent();
+        FileListBox.ItemsSource = _fileItems;
+
+        _logFlushTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _logFlushTimer.Tick += (s, e) => FlushLogsToUI();
         
 #if !DISABLE_GOOGLE_DRIVE
         SourceComboBox.Items.Add(new ComboBoxItem { Content = "Google Drive" });
@@ -88,7 +143,8 @@ public partial class MainWindow : Window
     {
         if (SourceComboBox == null) return;
         
-        FileListBox.ItemsSource = null;
+        _fileItems.Clear();
+        _logContent.Clear();
         LogBox.Text = "";
         LogBox.IsVisible = false;
         PdfWebView.IsVisible = false;
@@ -270,7 +326,8 @@ public partial class MainWindow : Window
             // Ignore errors during logout
         }
 
-        FileListBox.ItemsSource = null;
+        _fileItems.Clear();
+        _logContent.Clear();
         LogBox.Text = "";
         LogBox.IsVisible = false;
         PdfWebView.IsVisible = false;
@@ -310,44 +367,119 @@ public partial class MainWindow : Window
 
             var files = await _activeService.SyncFilesAsync(progress);
 
-            // Convert downloaded notes to PDFs, capturing Console output to the log box
-            await ConvertWithLogCaptureAsync(progress);
-
             if (files.Count == 0)
             {
-                FileListBox.ItemsSource = new[] { new FileItem { 
+                _fileItems.Clear();
+                _fileItems.Add(new FileItem { 
                     FileName = "(No files found)", 
                     DisplayName = "(No files found in source)",
                     HasPdf = true 
-                } };
+                });
             }
             else
             {
-                var items = new List<FileItem>();
+                var activePdfFolder = _activeService.LocalPdfFolder;
+                var existingItemsMap = _fileItems.ToDictionary(x => x.FileName);
+                var newItems = new List<FileItem>();
+
                 foreach (var f in files)
                 {
                     var pdfName = Path.GetFileNameWithoutExtension(f.Name) + ".pdf";
-                    var pngName = Path.GetFileNameWithoutExtension(f.Name) + ".png";
-                    var pdfPath = Path.Combine(_activeService.LocalPdfFolder, pdfName);
-                    var pngPath = Path.Combine(_activeService.LocalPdfFolder, pngName);
-                    
+                    var pdfPath = Path.Combine(activePdfFolder, pdfName);
                     bool hasPdf = File.Exists(pdfPath);
-                    
-                    Bitmap? bmp = null;
-                    if (File.Exists(pngPath))
+
+                    if (existingItemsMap.TryGetValue(f.Name, out var existing))
                     {
-                        try { bmp = new Bitmap(pngPath); }
-                        catch { }
+                        existing.HasPdf = hasPdf;
+                        newItems.Add(existing);
                     }
-                    items.Add(new FileItem { 
-                        FileName = f.Name, 
-                        DisplayName = FormatDisplayName(f.Name),
-                        PreviewImage = bmp, 
-                        HasPdf = hasPdf 
-                    });
+                    else
+                    {
+                        newItems.Add(new FileItem
+                        {
+                            FileName = f.Name,
+                            DisplayName = FormatDisplayName(f.Name),
+                            HasPdf = hasPdf
+                        });
+                    }
                 }
-                FileListBox.ItemsSource = items;
+
+                _fileItems.Clear();
+                foreach (var item in newItems)
+                {
+                    _fileItems.Add(item);
+                }
+
+                // Asynchronously load preview thumbnails for notes that already have preview images
+                _ = Task.Run(() =>
+                {
+                    foreach (var item in newItems)
+                    {
+                        if (item.PreviewImage != null) continue;
+
+                        var pngName = Path.GetFileNameWithoutExtension(item.FileName) + ".png";
+                        var pngPath = Path.Combine(activePdfFolder, pngName);
+                        if (File.Exists(pngPath))
+                        {
+                            try
+                            {
+                                var bmp = new Bitmap(pngPath);
+                                Dispatcher.UIThread.Post(() =>
+                                {
+                                    item.PreviewImage = bmp;
+                                });
+                            }
+                            catch { }
+                        }
+                    }
+                });
             }
+
+            // Convert downloaded notes to PDFs, capturing Console output to the log box
+            await ConvertWithLogCaptureAsync(progress, onFileConverted: fileName =>
+            {
+                var activePdfFolder = _activeService.LocalPdfFolder;
+                var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
+                var pngName = Path.GetFileNameWithoutExtension(fileName) + ".png";
+                var pdfPath = Path.Combine(activePdfFolder, pdfName);
+                var pngPath = Path.Combine(activePdfFolder, pngName);
+
+                Bitmap? bmp = null;
+                if (File.Exists(pngPath))
+                {
+                    try { bmp = new Bitmap(pngPath); }
+                    catch { }
+                }
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    var existing = _fileItems.FirstOrDefault(x => x.FileName == fileName);
+                    if (existing != null)
+                    {
+                        existing.HasPdf = File.Exists(pdfPath);
+                        if (bmp != null)
+                        {
+                            existing.PreviewImage = bmp;
+                        }
+
+                        if (FileListBox.SelectedItem is FileItem selected && selected.FileName == fileName)
+                        {
+                            var _ = LoadPdfForItemAsync(selected);
+                        }
+                    }
+                    else
+                    {
+                        var newItem = new FileItem
+                        {
+                            FileName = fileName,
+                            DisplayName = FormatDisplayName(fileName),
+                            PreviewImage = bmp,
+                            HasPdf = File.Exists(pdfPath)
+                        };
+                        _fileItems.Add(newItem);
+                    }
+                });
+            });
         }
         catch (Exception ex)
         {
@@ -367,11 +499,17 @@ public partial class MainWindow : Window
         var regex = new Regex(@"(?i)[_-]?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}");
         return regex.Replace(nameWithoutExt, "");
     }
-    private async void OnFileSelected(object? sender, SelectionChangedEventArgs e)
+
+    private async void OnFileSelected(object? sender, SelectionChangedEventArgs? e)
     {
         if (FileListBox.SelectedItem is not FileItem selectedItem)
             return;
 
+        await LoadPdfForItemAsync(selectedItem);
+    }
+
+    private async Task LoadPdfForItemAsync(FileItem selectedItem)
+    {
         if (selectedItem.FileName == "(No files found)") return;
 
         var fileName = selectedItem.FileName;
@@ -420,42 +558,67 @@ public partial class MainWindow : Window
         return template.Replace("{{base64Pdf}}", base64Pdf);
     }
 
-    private async Task ConvertWithLogCaptureAsync(IProgress<string> progress)
+    private async Task ConvertWithLogCaptureAsync(IProgress<string> progress, Action<string>? onFileConverted = null)
     {
         // Redirect Console.Out and Console.Error to capture NoteinToPdf output
         var originalOut = Console.Out;
         var originalErr = Console.Error;
-        var logWriter = new UITextWriter(line =>
-            Dispatcher.UIThread.Post(() => AppendLog(line)));
+
+        _logQueue.Clear();
+        _logContent.Clear();
+        _logFlushTimer.Start();
+
+        var logWriter = new UITextWriter(line => _logQueue.Enqueue(line));
 
         Console.SetOut(logWriter);
         Console.SetError(logWriter);
         try
         {
-            await _activeService.ConvertAllToPdfAsync(progress);
+            await _activeService.ConvertAllToPdfAsync(progress, onFileConverted);
         }
         finally
         {
             Console.SetOut(originalOut);
             Console.SetError(originalErr);
+            _logFlushTimer.Stop();
+            FlushLogsToUI();
         }
     }
 
-    private void AppendLog(string text)
+    private void FlushLogsToUI()
     {
-        if (string.IsNullOrEmpty(text)) return;
-        LogBox.Text += text + "\n";
-        // Auto-scroll to end
-        LogBox.CaretIndex = LogBox.Text?.Length ?? 0;
+        if (_logQueue.IsEmpty) return;
+
+        bool updated = false;
+        while (_logQueue.TryDequeue(out var line))
+        {
+            if (!string.IsNullOrEmpty(line))
+            {
+                _logContent.Append(line).Append('\n');
+                updated = true;
+            }
+        }
+
+        if (updated)
+        {
+            if (_logContent.Length > MaxLogCharacters)
+            {
+                _logContent.Remove(0, _logContent.Length - MaxLogCharacters);
+            }
+
+            LogBox.Text = _logContent.ToString();
+            LogBox.CaretIndex = LogBox.Text.Length;
+        }
     }
 
     /// <summary>
-    /// A TextWriter that forwards complete lines to a callback action.
+    /// A thread-safe TextWriter that forwards complete lines to a callback action.
     /// </summary>
     private class UITextWriter : TextWriter
     {
         private readonly Action<string> _onLine;
         private readonly StringBuilder _buffer = new();
+        private readonly object _lock = new();
 
         public UITextWriter(Action<string> onLine) => _onLine = onLine;
 
@@ -463,23 +626,37 @@ public partial class MainWindow : Window
 
         public override void Write(char value)
         {
-            if (value == '\n')
-                FlushBuffer();
-            else if (value != '\r')
-                _buffer.Append(value);
+            lock (_lock)
+            {
+                if (value == '\n')
+                    FlushBuffer();
+                else if (value != '\r')
+                    _buffer.Append(value);
+            }
         }
 
         public override void Write(string? value)
         {
             if (value == null) return;
-            foreach (var ch in value)
-                Write(ch);
+            lock (_lock)
+            {
+                foreach (var ch in value)
+                {
+                    if (ch == '\n')
+                        FlushBuffer();
+                    else if (ch != '\r')
+                        _buffer.Append(ch);
+                }
+            }
         }
 
         public override void WriteLine(string? value)
         {
-            if (value != null) _buffer.Append(value);
-            FlushBuffer();
+            lock (_lock)
+            {
+                if (value != null) _buffer.Append(value);
+                FlushBuffer();
+            }
         }
 
         private void FlushBuffer()
@@ -547,7 +724,26 @@ public partial class MainWindow : Window
             }
             
             // Regenerate PDF silently
-            await _activeService.ConvertAllToPdfAsync();
+            await _activeService.ConvertAllToPdfAsync(onFileConverted: convertedName =>
+            {
+                var activePdfFolder = _activeService.LocalPdfFolder;
+                var pngName = Path.GetFileNameWithoutExtension(convertedName) + ".png";
+                var pngPath = Path.Combine(activePdfFolder, pngName);
+                Bitmap? bmp = null;
+                if (File.Exists(pngPath))
+                {
+                    try { bmp = new Bitmap(pngPath); } catch { }
+                }
+                Dispatcher.UIThread.Post(() =>
+                {
+                    var existing = _fileItems.FirstOrDefault(x => x.FileName == convertedName);
+                    if (existing != null)
+                    {
+                        existing.HasPdf = true;
+                        if (bmp != null) existing.PreviewImage = bmp;
+                    }
+                });
+            });
 
             if (File.Exists(pdfPath))
             {
@@ -584,6 +780,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        _logFlushTimer.Stop();
         _pdfServer?.Dispose();
     }
 }
