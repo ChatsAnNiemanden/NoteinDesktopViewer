@@ -1,10 +1,12 @@
+using NoteinDesktopViewer.Conversion;
+using NoteinDesktopViewer.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace NoteinDesktopViewer;
+namespace NoteinDesktopViewer.Services;
 
 public class LocalFolderService : INoteSourceService
 {

@@ -9,6 +9,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using System.Text.RegularExpressions;
+using NoteinDesktopViewer.Services;
+using NoteinDesktopViewer.Helpers;
 
 namespace NoteinDesktopViewer;
 

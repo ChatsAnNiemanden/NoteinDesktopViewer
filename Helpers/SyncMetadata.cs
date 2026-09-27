@@ -4,7 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace NoteinDesktopViewer;
+namespace NoteinDesktopViewer.Helpers;
 
 /// <summary>
 /// Persists sync state so we know which files have already been downloaded

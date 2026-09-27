@@ -3,6 +3,9 @@ using Google.Apis.Auth.OAuth2;
 using Google.Apis.Drive.v3;
 using Google.Apis.Services;
 using Google.Apis.Util.Store;
+using NoteinDesktopViewer.Conversion;
+using NoteinDesktopViewer.Helpers;
+using NoteinDesktopViewer.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10,7 +13,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NoteinDesktopViewer;
+namespace NoteinDesktopViewer.Services;
 
 public class GoogleDriveService : INoteSourceService
 {

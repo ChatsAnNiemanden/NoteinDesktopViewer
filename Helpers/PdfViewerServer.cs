@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace NoteinDesktopViewer;
+namespace NoteinDesktopViewer.Helpers;
 
 /// <summary>
 /// Minimal in-process HTTP server that serves a single HTML page to the WebView.

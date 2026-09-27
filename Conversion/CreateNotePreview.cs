@@ -4,7 +4,7 @@ using UglyToad.PdfPig;
 using UglyToad.PdfPig.Graphics.Colors;
 using UglyToad.PdfPig.Rendering.Skia;
 
-namespace NoteinDesktopViewer
+namespace NoteinDesktopViewer.Conversion
 {
     internal class CreateNotePreview
     {

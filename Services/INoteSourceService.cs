@@ -1,8 +1,9 @@
+using NoteinDesktopViewer.Models;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace NoteinDesktopViewer;
+namespace NoteinDesktopViewer.Services;
 
 public interface INoteSourceService
 {

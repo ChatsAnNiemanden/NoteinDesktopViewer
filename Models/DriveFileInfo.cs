@@ -1,6 +1,6 @@
 using System;
 
-namespace NoteinDesktopViewer;
+namespace NoteinDesktopViewer.Models;
 
 public class DriveFileInfo
 {
