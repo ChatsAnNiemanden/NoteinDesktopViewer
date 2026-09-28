@@ -75,25 +75,43 @@
                     <RowDefinition Height="0" MinHeight="0" />
                 </Grid.RowDefinitions>
 
-                <ListBox x:Name="FileListBox" Grid.Row="0" SelectionChanged="OnFileSelected" Background="Transparent" BorderThickness="0">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate x:DataType="local:FileItem">
-                            <Panel>
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Border Width="40" Height="50" CornerRadius="4" ClipToBounds="True" Background="{DynamicResource SystemControlBackgroundAltHighBrush}" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
-                                        <Panel>
-                                            <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
-                                        </Panel>
-                                    </Border>
-                                    <StackPanel VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="PDF missing" Foreground="#D9534F" FontSize="11" IsVisible="{Binding !HasPdf}" Margin="0,2,0,0" />
+                <Grid Grid.Row="0" RowDefinitions="Auto,*">
+                    <Border Grid.Row="0"
+                            Padding="8,6"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                            BorderThickness="0,0,0,1">
+                        <Grid ColumnDefinitions="Auto,*">
+                            <TextBlock Grid.Column="0" Text="Sort:" VerticalAlignment="Center" Margin="4,0,8,0" Opacity="0.7" FontSize="12" />
+                            <ComboBox x:Name="SortComboBox" Grid.Column="1" HorizontalAlignment="Stretch" SelectionChanged="OnSortChanged">
+                                <ComboBoxItem Content="Date Modified (Newest)" />
+                                <ComboBoxItem Content="Date Modified (Oldest)" />
+                                <ComboBoxItem Content="Name (A → Z)" />
+                                <ComboBoxItem Content="Name (Z → A)" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+
+                    <ListBox x:Name="FileListBox" Grid.Row="1" SelectionChanged="OnFileSelected" Background="Transparent" BorderThickness="0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="local:FileItem">
+                                <Panel>
+                                    <StackPanel Orientation="Horizontal" Spacing="12">
+                                        <Border Width="40" Height="50" CornerRadius="4" ClipToBounds="True" Background="{DynamicResource SystemControlBackgroundAltHighBrush}" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+                                            <Panel>
+                                                <Image Source="{Binding PreviewImage}" Stretch="UniformToFill" />
+                                            </Panel>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="Medium" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding ModifiedTimeDisplay}" FontSize="11" Opacity="0.6" IsVisible="{Binding HasModifiedTime}" Margin="0,1,0,0" />
+                                            <TextBlock Text="PDF missing" Foreground="#D9534F" FontSize="11" IsVisible="{Binding !HasPdf}" Margin="0,2,0,0" />
+                                        </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
-                            </Panel>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                                </Panel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
 
                 <!-- Activity Log Splitter -->
                 <GridSplitter x:Name="LogSplitter"

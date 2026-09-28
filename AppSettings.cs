@@ -7,6 +7,7 @@ namespace NoteinDesktopViewer;
 public class AppSettings
 {
     public int LastSourceIndex { get; set; } = 0;
+    public int LastSortIndex { get; set; } = 0;
     public string LastLocalFolder { get; set; } = string.Empty;
     public string GoogleDriveTargetFolder { get; set; } = "NoteInDataSync";
     public double StrokeDarkenFactor { get; set; } = 1.0;

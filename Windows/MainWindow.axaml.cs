@@ -51,6 +51,24 @@ public class FileItem : INotifyPropertyChanged
         set => SetField(ref _hasPdf, value);
     }
 
+    private DateTime? _modifiedTime;
+    public DateTime? ModifiedTime
+    {
+        get => _modifiedTime;
+        set
+        {
+            if (SetField(ref _modifiedTime, value))
+            {
+                OnPropertyChanged(nameof(ModifiedTimeDisplay));
+                OnPropertyChanged(nameof(HasModifiedTime));
+            }
+        }
+    }
+
+    public bool HasModifiedTime => _modifiedTime.HasValue;
+
+    public string ModifiedTimeDisplay => _modifiedTime?.ToLocalTime().ToString("g") ?? string.Empty;
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -140,6 +158,18 @@ public partial class MainWindow : Window
         {
             SourceComboBox.SelectedIndex = 0;
         }
+
+        if (SortComboBox != null)
+        {
+            if (_settings.LastSortIndex >= 0 && _settings.LastSortIndex < SortComboBox.Items.Count)
+            {
+                SortComboBox.SelectedIndex = _settings.LastSortIndex;
+            }
+            else
+            {
+                SortComboBox.SelectedIndex = 0;
+            }
+        }
         _initializing = false;
 
         UpdateSourceUI();
@@ -198,6 +228,57 @@ public partial class MainWindow : Window
         {
             _settings.LastSourceIndex = SourceComboBox.SelectedIndex;
             _settings.Save();
+        }
+    }
+
+    private void OnSortChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_initializing) return;
+
+        if (_settings != null && SortComboBox != null)
+        {
+            _settings.LastSortIndex = SortComboBox.SelectedIndex;
+            _settings.Save();
+        }
+
+        ApplySorting();
+    }
+
+    private List<FileItem> SortItems(IEnumerable<FileItem> items, int sortIndex)
+    {
+        return sortIndex switch
+        {
+            0 => items.OrderByDescending(x => x.ModifiedTime ?? DateTime.MinValue)
+                      .ThenBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                      .ToList(),
+            1 => items.OrderBy(x => x.ModifiedTime ?? DateTime.MaxValue)
+                      .ThenBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                      .ToList(),
+            2 => items.OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                      .ThenByDescending(x => x.ModifiedTime ?? DateTime.MinValue)
+                      .ToList(),
+            3 => items.OrderByDescending(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+                      .ThenByDescending(x => x.ModifiedTime ?? DateTime.MinValue)
+                      .ToList(),
+            _ => items.ToList()
+        };
+    }
+
+    private void ApplySorting()
+    {
+        if (_fileItems.Count <= 1) return;
+        if (_fileItems.Count == 1 && _fileItems[0].FileName == "(No files found)") return;
+
+        int sortIndex = SortComboBox?.SelectedIndex is >= 0 and <= 3 ? SortComboBox.SelectedIndex : _settings.LastSortIndex;
+        var sorted = SortItems(_fileItems, sortIndex);
+
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            int currentIndex = _fileItems.IndexOf(sorted[i]);
+            if (currentIndex != i && currentIndex >= 0)
+            {
+                _fileItems.Move(currentIndex, i);
+            }
         }
     }
 
@@ -430,6 +511,7 @@ public partial class MainWindow : Window
                 Dispatcher.UIThread.Post(() => LoadingText.Text = msg));
 
             var files = await _activeService.SyncFilesAsync(progress);
+            var fileLookup = files.GroupBy(f => f.Name).ToDictionary(g => g.Key, g => g.First().ModifiedTime);
 
             if (files.Count == 0)
             {
@@ -457,6 +539,7 @@ public partial class MainWindow : Window
                         if (existingItemsMap.TryGetValue(f.Name, out var existing))
                         {
                             existing.HasPdf = true;
+                            existing.ModifiedTime = f.ModifiedTime;
                             newItems.Add(existing);
                         }
                         else
@@ -465,14 +548,15 @@ public partial class MainWindow : Window
                             {
                                 FileName = f.Name,
                                 DisplayName = FormatDisplayName(f.Name),
-                                HasPdf = true
+                                HasPdf = true,
+                                ModifiedTime = f.ModifiedTime
                             });
                         }
                     }
                 }
 
                 _fileItems.Clear();
-                foreach (var item in newItems)
+                foreach (var item in SortItems(newItems, SortComboBox?.SelectedIndex is >= 0 and <= 3 ? SortComboBox.SelectedIndex : _settings.LastSortIndex))
                 {
                     _fileItems.Add(item);
                 }
@@ -533,6 +617,10 @@ public partial class MainWindow : Window
                         if (existing != null)
                         {
                             existing.HasPdf = File.Exists(pdfPath);
+                            if (fileLookup.TryGetValue(fileName, out var mt))
+                            {
+                                existing.ModifiedTime = mt;
+                            }
                             if (bmp != null)
                             {
                                 existing.PreviewImage = bmp;
@@ -550,10 +638,12 @@ public partial class MainWindow : Window
                                 FileName = fileName,
                                 DisplayName = FormatDisplayName(fileName),
                                 PreviewImage = bmp,
-                                HasPdf = File.Exists(pdfPath)
+                                HasPdf = File.Exists(pdfPath),
+                                ModifiedTime = fileLookup.TryGetValue(fileName, out var mt) ? mt : null
                             };
                             _fileItems.Add(newItem);
                         }
+                        ApplySorting();
                     });
                 },
                 onFileFailed: fileName =>
@@ -570,6 +660,10 @@ public partial class MainWindow : Window
                         if (existing != null)
                         {
                             existing.HasPdf = false;
+                            if (fileLookup.TryGetValue(fileName, out var mt))
+                            {
+                                existing.ModifiedTime = mt;
+                            }
                         }
                         else
                         {
@@ -577,10 +671,12 @@ public partial class MainWindow : Window
                             {
                                 FileName = fileName,
                                 DisplayName = FormatDisplayName(fileName),
-                                HasPdf = false
+                                HasPdf = false,
+                                ModifiedTime = fileLookup.TryGetValue(fileName, out var mt) ? mt : null
                             };
                             _fileItems.Add(newItem);
                         }
+                        ApplySorting();
                     });
                 });
 
