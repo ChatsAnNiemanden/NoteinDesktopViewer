@@ -56,6 +56,38 @@ internal sealed class PdfViewerServer : IDisposable
 
     public event Func<double, Task<string>>? OnReexportRequested;
 
+    private static readonly Lazy<byte[]?> s_pdfJsBytes = new(() => LoadEmbeddedResource("NoteinDesktopViewer.Assets.pdf.mjs"));
+    private static readonly Lazy<byte[]?> s_pdfWorkerJsBytes = new(() => LoadEmbeddedResource("NoteinDesktopViewer.Assets.pdf.worker.mjs"));
+
+    private static byte[]? LoadEmbeddedResource(string resourceName)
+    {
+        using var stream = typeof(PdfViewerServer).Assembly.GetManifestResourceStream(resourceName);
+        if (stream == null) return null;
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ms.ToArray();
+    }
+
+    private static async Task ServeBytesAsync(Stream stream, byte[]? bytes, string contentType)
+    {
+        if (bytes == null)
+        {
+            var notFound = Encoding.ASCII.GetBytes("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            await stream.WriteAsync(notFound);
+            return;
+        }
+
+        var header = Encoding.ASCII.GetBytes(
+            $"HTTP/1.1 200 OK\r\n" +
+            $"Content-Type: {contentType}\r\n" +
+            $"Content-Length: {bytes.Length}\r\n" +
+            $"Cache-Control: public, max-age=31536000, immutable\r\n" +
+            $"Connection: close\r\n\r\n");
+
+        await stream.WriteAsync(header);
+        await stream.WriteAsync(bytes);
+    }
+
     private async Task HandleClientAsync(TcpClient client)
     {
         try
@@ -83,29 +115,43 @@ internal sealed class PdfViewerServer : IDisposable
             }
             
             var fullReq = reqBuilder.ToString();
-            if (fullReq.StartsWith("GET /reexport?"))
+            var firstLine = fullReq.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)[0];
+            var reqParts = firstLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var rawPath = reqParts.Length > 1 ? reqParts[1] : "/";
+            var path = rawPath.Split('?')[0];
+
+            if (path == "/pdf.mjs")
             {
-                var endIdx = fullReq.IndexOf(' ', 14);
-                if (endIdx != -1)
+                await ServeBytesAsync(stream, s_pdfJsBytes.Value, "application/javascript; charset=utf-8");
+                return;
+            }
+
+            if (path == "/pdf.worker.mjs")
+            {
+                await ServeBytesAsync(stream, s_pdfWorkerJsBytes.Value, "application/javascript; charset=utf-8");
+                return;
+            }
+
+            if (path == "/reexport")
+            {
+                var queryIdx = rawPath.IndexOf('?');
+                var queryStr = queryIdx != -1 ? rawPath.Substring(queryIdx + 1) : "";
+                var parts = queryStr.Split('&');
+                double darken = 1.0;
+                foreach (var part in parts)
                 {
-                    var queryStr = fullReq.Substring(14, endIdx - 14); // e.g. "darken=1.5"
-                    var parts = queryStr.Split('&');
-                    double darken = 1.0;
-                    foreach (var part in parts)
-                    {
-                        if (part.StartsWith("darken="))
-                            double.TryParse(part.Substring(7), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out darken);
-                    }
-                    
-                    if (OnReexportRequested != null)
-                    {
-                        var base64 = await OnReexportRequested.Invoke(darken);
-                        var bodyBytes = Encoding.UTF8.GetBytes(base64);
-                        var okHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n");
-                        await stream.WriteAsync(okHeader);
-                        await stream.WriteAsync(bodyBytes);
-                        return;
-                    }
+                    if (part.StartsWith("darken="))
+                        double.TryParse(part.Substring(7), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out darken);
+                }
+                
+                if (OnReexportRequested != null)
+                {
+                    var base64 = await OnReexportRequested.Invoke(darken);
+                    var bodyBytes = Encoding.UTF8.GetBytes(base64);
+                    var okHeader = Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {bodyBytes.Length}\r\nConnection: close\r\n\r\n");
+                    await stream.WriteAsync(okHeader);
+                    await stream.WriteAsync(bodyBytes);
+                    return;
                 }
                 var errHeader = Encoding.ASCII.GetBytes("HTTP/1.1 500 ERROR\r\nConnection: close\r\n\r\n");
                 await stream.WriteAsync(errHeader);

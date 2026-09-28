@@ -45,7 +45,9 @@ public partial class LicensesWindow : Window
         sb.AppendLine();
         
         sb.AppendLine("PDF.js (Apache-2.0 License)");
-        sb.AppendLine("Copyright 2012 Mozilla Foundation");
+        sb.AppendLine("Copyright (c) 2012 Mozilla Foundation");
+        sb.AppendLine("Licensed under the Apache License, Version 2.0");
+        sb.AppendLine("https://github.com/mozilla/pdf.js");
         
         var licensesText = this.FindControl<TextBlock>("LicensesText");
         if (licensesText != null)

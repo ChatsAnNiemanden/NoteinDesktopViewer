@@ -32,8 +32,11 @@ public class GoogleDriveService : INoteSourceService
 
     private UserCredential? _credential;
     private DriveService? _driveService;
+    private bool _isOffline;
 
-    public bool IsLoggedIn => _credential != null;
+    public bool IsOffline => _isOffline;
+
+    public bool IsLoggedIn => _credential != null || (HasSavedToken && _isOffline);
 
     public bool HasSavedToken
     {
@@ -43,6 +46,38 @@ public class GoogleDriveService : INoteSourceService
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), TokenFolder);
             return Directory.Exists(tokenPath) && Directory.EnumerateFiles(tokenPath).Any();
         }
+    }
+
+    public static bool IsNetworkOrOfflineException(Exception? ex)
+    {
+        if (ex == null) return false;
+
+        if (ex is AggregateException agg)
+        {
+            return agg.InnerExceptions.Any(IsNetworkOrOfflineException);
+        }
+
+        if (ex is System.Net.Http.HttpRequestException ||
+            ex is System.Net.Sockets.SocketException ||
+            ex is System.Net.WebException ||
+            ex is TimeoutException ||
+            ex is TaskCanceledException ||
+            ex is Google.GoogleApiException ||
+            ex is Google.Apis.Auth.OAuth2.Responses.TokenResponseException)
+        {
+            return true;
+        }
+
+        if (ex is IOException ioEx &&
+            (ioEx.Message.Contains("network", StringComparison.OrdinalIgnoreCase) ||
+             ioEx.Message.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
+             ioEx.Message.Contains("closed", StringComparison.OrdinalIgnoreCase) ||
+             ioEx.Message.Contains("aborted", StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return ex.InnerException != null && IsNetworkOrOfflineException(ex.InnerException);
     }
 
     /// <summary>
@@ -60,12 +95,23 @@ public class GoogleDriveService : INoteSourceService
         var tokenPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), TokenFolder);
 
-        _credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
-            (await GoogleClientSecrets.FromStreamAsync(stream)).Secrets,
-            Scopes,
-            "user",
-            CancellationToken.None,
-            new FileDataStore(tokenPath, true));
+        try
+        {
+            _credential = await GoogleWebAuthorizationBroker.AuthorizeAsync(
+                (await GoogleClientSecrets.FromStreamAsync(stream)).Secrets,
+                Scopes,
+                "user",
+                CancellationToken.None,
+                new FileDataStore(tokenPath, true));
+        }
+        catch (Exception ex) when (HasSavedToken && IsNetworkOrOfflineException(ex))
+        {
+            _isOffline = true;
+            var settings = AppSettings.Load();
+            return !string.IsNullOrEmpty(settings.LastGoogleDriveEmail)
+                ? $"{settings.LastGoogleDriveEmail} (Offline)"
+                : "Google Drive (Offline)";
+        }
 
         _driveService = new DriveService(new BaseClientService.Initializer
         {
@@ -74,10 +120,26 @@ public class GoogleDriveService : INoteSourceService
         });
 
         // Fetch user email from the about endpoint
-        var aboutRequest = _driveService.About.Get();
-        aboutRequest.Fields = "user";
-        var about = await aboutRequest.ExecuteAsync();
-        return about.User.EmailAddress ?? "Unknown";
+        try
+        {
+            var aboutRequest = _driveService.About.Get();
+            aboutRequest.Fields = "user";
+            var about = await aboutRequest.ExecuteAsync();
+            var email = about.User.EmailAddress ?? "Unknown";
+            _isOffline = false;
+            var settings = AppSettings.Load();
+            settings.LastGoogleDriveEmail = email;
+            settings.Save();
+            return email;
+        }
+        catch (Exception ex) when (IsNetworkOrOfflineException(ex))
+        {
+            _isOffline = true;
+            var settings = AppSettings.Load();
+            return !string.IsNullOrEmpty(settings.LastGoogleDriveEmail)
+                ? $"{settings.LastGoogleDriveEmail} (Offline)"
+                : "Google Drive (Offline)";
+        }
     }
 
     /// <summary>
@@ -158,15 +220,68 @@ public class GoogleDriveService : INoteSourceService
     }
 
     /// <summary>
+    /// Returns files from the local sync folder.
+    /// </summary>
+    public List<DriveFileInfo> GetLocalSyncedFiles()
+    {
+        var result = new List<DriveFileInfo>();
+        if (!Directory.Exists(LocalSyncFolder))
+            return result;
+
+        var dir = new DirectoryInfo(LocalSyncFolder);
+        foreach (var fi in dir.GetFiles())
+        {
+            if (fi.Name.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            result.Add(new DriveFileInfo
+            {
+                Id = fi.FullName,
+                Name = fi.Name,
+                ModifiedTime = fi.LastWriteTimeUtc
+            });
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Syncs the NoteInDataSync folder: downloads new/modified files, skips unchanged ones.
     /// Reports progress via the callback (e.g. "Downloading 3/12: notes.db").
-    /// Returns the list of all remote files.
+    /// Returns the list of all remote files (or local cached files when offline).
     /// </summary>
     public async Task<List<DriveFileInfo>> SyncFilesAsync(IProgress<string>? progress = null)
     {
+        if (_driveService == null && HasSavedToken)
+        {
+            try
+            {
+                await LoginAsync();
+            }
+            catch { }
+        }
+
+        if (_driveService == null)
+        {
+            _isOffline = true;
+            progress?.Report("Offline: skipped syncing with Google Drive.");
+            return GetLocalSyncedFiles();
+        }
+
         progress?.Report("Checking for changes...");
 
-        var remoteFiles = await ListNoteInDataSyncFilesAsync();
+        List<DriveFileInfo> remoteFiles;
+        try
+        {
+            remoteFiles = await ListNoteInDataSyncFilesAsync();
+            _isOffline = false;
+        }
+        catch (Exception ex) when (IsNetworkOrOfflineException(ex))
+        {
+            _isOffline = true;
+            progress?.Report("Offline: skipped syncing with Google Drive.");
+            return GetLocalSyncedFiles();
+        }
+
         if (remoteFiles.Count == 0)
         {
             progress?.Report("No files found in NoteInDataSync folder.");
@@ -194,16 +309,31 @@ public class GoogleDriveService : INoteSourceService
                 }
             }
 
-            progress?.Report($"Downloading {i + 1}/{remoteFiles.Count}: {file.Name}");
-            await DownloadFileAsync(file.Id, localPath);
+            try
+            {
+                progress?.Report($"Downloading {i + 1}/{remoteFiles.Count}: {file.Name}");
+                await DownloadFileAsync(file.Id, localPath);
 
-            if (file.ModifiedTime.HasValue)
-                await metadata.UpdateEntryAsync(file.Id, file.Name, file.ModifiedTime.Value, "GoogleDrive");
+                if (file.ModifiedTime.HasValue)
+                    await metadata.UpdateEntryAsync(file.Id, file.Name, file.ModifiedTime.Value, "GoogleDrive");
 
-            downloaded++;
+                downloaded++;
+            }
+            catch (Exception ex) when (IsNetworkOrOfflineException(ex))
+            {
+                _isOffline = true;
+                progress?.Report($"Connection lost. Skipping remaining downloads.");
+                break;
+            }
         }
 
         await metadata.SaveAsync();
+
+        if (_isOffline)
+        {
+            progress?.Report($"Offline: downloaded {downloaded} file(s) before connection was lost.");
+            return GetLocalSyncedFiles();
+        }
 
         progress?.Report(downloaded == 0
             ? $"All {remoteFiles.Count} files up to date."
@@ -217,9 +347,14 @@ public class GoogleDriveService : INoteSourceService
     /// </summary>
     public async Task LogoutAsync()
     {
+        _isOffline = false;
         if (_credential != null)
         {
-            await _credential.RevokeTokenAsync(CancellationToken.None);
+            try
+            {
+                await _credential.RevokeTokenAsync(CancellationToken.None);
+            }
+            catch { }
             _credential = null;
         }
 
@@ -231,6 +366,10 @@ public class GoogleDriveService : INoteSourceService
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), TokenFolder);
         if (Directory.Exists(tokenPath))
             Directory.Delete(tokenPath, true);
+
+        var settings = AppSettings.Load();
+        settings.LastGoogleDriveEmail = string.Empty;
+        settings.Save();
     }
 
     /// <summary>
@@ -244,7 +383,14 @@ public class GoogleDriveService : INoteSourceService
     {
         await Task.Run(async () =>
         {
+            if (!Directory.Exists(LocalSyncFolder))
+            {
+                progress?.Report("No local files to convert.");
+                return;
+            }
+
             var noteFiles = Directory.GetFiles(LocalSyncFolder)
+                .Where(f => !f.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
                 .Select(f => new FileInfo(f))
                 .ToList();
 

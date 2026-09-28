@@ -306,7 +306,10 @@ public partial class MainWindow : Window
                 LoginButton.IsVisible = false;
                 LogoutButton.IsVisible = true;
                 ManuelSyncButton.IsEnabled = true;
-                StatusText.Text = "Signed in to Google Drive";
+                var email = !string.IsNullOrEmpty(_settings?.LastGoogleDriveEmail)
+                    ? _settings.LastGoogleDriveEmail
+                    : "Signed in to Google Drive";
+                StatusText.Text = _driveService.IsOffline ? $"{email} (Offline)" : email;
                 var _ = SyncAndDisplayFilesAsync();
             }
             else if (_driveService.HasSavedToken)
@@ -395,11 +398,29 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            ErrorText.Text = $"Login failed: {ex.Message}";
-            ErrorText.IsVisible = true;
-            StatusText.Text = "Not signed in";
-            LoginButton.IsVisible = true;
-            LogoutButton.IsVisible = false;
+            if (_driveService.HasSavedToken && GoogleDriveService.IsNetworkOrOfflineException(ex))
+            {
+                var cachedEmail = !string.IsNullOrEmpty(_settings.LastGoogleDriveEmail)
+                    ? $"{_settings.LastGoogleDriveEmail} (Offline)"
+                    : "Google Drive (Offline)";
+                StatusText.Text = cachedEmail;
+                LogoutButton.IsEnabled = true;
+                LoginButton.IsVisible = false;
+                LogoutButton.IsVisible = true;
+                ManuelSyncButton.IsEnabled = true;
+                if (_activeService == _driveService)
+                {
+                    await SyncAndDisplayFilesAsync();
+                }
+            }
+            else
+            {
+                ErrorText.Text = $"Login failed: {ex.Message}";
+                ErrorText.IsVisible = true;
+                StatusText.Text = "Not signed in";
+                LoginButton.IsVisible = true;
+                LogoutButton.IsVisible = false;
+            }
         }
         finally
         {
@@ -715,6 +736,16 @@ public partial class MainWindow : Window
                     expiration: TimeSpan.FromSeconds(5)
                     ));
             }
+
+#if !DISABLE_GOOGLE_DRIVE
+            if (_activeService == _driveService)
+            {
+                var email = !string.IsNullOrEmpty(_settings.LastGoogleDriveEmail)
+                    ? _settings.LastGoogleDriveEmail
+                    : "Signed in to Google Drive";
+                StatusText.Text = _driveService.IsOffline ? $"{email} (Offline)" : email;
+            }
+#endif
         }
     }
 

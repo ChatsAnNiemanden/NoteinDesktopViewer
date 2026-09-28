@@ -46,7 +46,28 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\PdfViewer.html" />
+    <EmbeddedResource Include="$(PdfJsDir)build/pdf.mjs" LogicalName="NoteinDesktopViewer.Assets.pdf.mjs" />
+    <EmbeddedResource Include="$(PdfJsDir)build/pdf.worker.mjs" LogicalName="NoteinDesktopViewer.Assets.pdf.worker.mjs" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <PdfJsVersion>4.10.38</PdfJsVersion>
+    <PdfJsDir>$(BaseIntermediateOutputPath)pdfjs/</PdfJsDir>
+    <PdfJsZip>$(PdfJsDir)pdfjs-$(PdfJsVersion)-dist.zip</PdfJsZip>
+  </PropertyGroup>
+
+  <Target Name="DownloadPdfJs" BeforeTargets="AssignTargetPaths;BeforeCompile" Condition="!Exists('$(PdfJsDir)build/pdf.mjs')">
+    <MakeDir Directories="$(PdfJsDir)" />
+    <DownloadFile
+      SourceUrl="https://github.com/mozilla/pdf.js/releases/download/v$(PdfJsVersion)/pdfjs-$(PdfJsVersion)-dist.zip"
+      DestinationFolder="$(PdfJsDir)"
+      DestinationFileName="pdfjs-$(PdfJsVersion)-dist.zip"
+      SkipUnchangedFiles="true" />
+    <Unzip
+      SourceFiles="$(PdfJsZip)"
+      DestinationFolder="$(PdfJsDir)"
+      SkipUnchangedFiles="true" />
+  </Target>
 
   <ItemGroup Condition="'$(DisableGoogleDrive)' != 'true'">
     <PackageReference Include="Google.Apis.Drive.v3" Version="1.76.0.4261" />

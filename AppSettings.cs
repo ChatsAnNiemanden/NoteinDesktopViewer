@@ -10,6 +10,7 @@ public class AppSettings
     public int LastSortIndex { get; set; } = 0;
     public string LastLocalFolder { get; set; } = string.Empty;
     public string GoogleDriveTargetFolder { get; set; } = "NoteInDataSync";
+    public string LastGoogleDriveEmail { get; set; } = string.Empty;
     public double StrokeDarkenFactor { get; set; } = 1.0;
     public double LogHeight { get; set; } = 140;
 
