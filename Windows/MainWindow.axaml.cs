@@ -84,6 +84,8 @@ public partial class MainWindow : Window
     private const int MaxLogCharacters = 50_000;
     private bool _isSigningIn = false;
     private bool _initializing = false;
+    private double _logHeight = 140;
+    private RowDefinition? LogRow => SidebarGrid?.RowDefinitions.Count > 2 ? SidebarGrid.RowDefinitions[2] : null;
 
     private WindowNotificationManager? _notificationManager;
 
@@ -92,6 +94,20 @@ public partial class MainWindow : Window
         _settings = AppSettings.Load();
         InitializeComponent();
         FileListBox.ItemsSource = _fileItems;
+
+        _logHeight = _settings.LogHeight >= 60 ? _settings.LogHeight : 140;
+        LogSplitter.DragCompleted += (s, e) =>
+        {
+            if (LogRow != null && LogRow.Height.IsAbsolute && LogRow.Height.Value >= 60)
+            {
+                _logHeight = LogRow.Height.Value;
+                if (_settings != null)
+                {
+                    _settings.LogHeight = _logHeight;
+                    _settings.Save();
+                }
+            }
+        };
 
         _logFlushTimer = new DispatcherTimer
         {
@@ -129,6 +145,36 @@ public partial class MainWindow : Window
         UpdateSourceUI();
     }
 
+    private void SetLogVisibility(bool isVisible)
+    {
+        if (isVisible)
+        {
+            if (LogRow != null)
+            {
+                LogRow.MinHeight = 60;
+                LogRow.Height = new GridLength(_logHeight, GridUnitType.Pixel);
+            }
+            if (LogSplitter != null) LogSplitter.IsVisible = true;
+            if (LogContainer != null) LogContainer.IsVisible = true;
+            if (LogBox != null) LogBox.IsVisible = true;
+        }
+        else
+        {
+            if (LogRow != null && LogRow.Height.IsAbsolute && LogRow.Height.Value >= 60)
+            {
+                _logHeight = LogRow.Height.Value;
+            }
+            if (LogRow != null)
+            {
+                LogRow.MinHeight = 0;
+                LogRow.Height = new GridLength(0);
+            }
+            if (LogSplitter != null) LogSplitter.IsVisible = false;
+            if (LogContainer != null) LogContainer.IsVisible = false;
+            if (LogBox != null) LogBox.IsVisible = false;
+        }
+    }
+
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
@@ -162,7 +208,7 @@ public partial class MainWindow : Window
         _fileItems.Clear();
         _logContent.Clear();
         LogBox.Text = "";
-        LogBox.IsVisible = false;
+        SetLogVisibility(false);
         PdfWebView.IsVisible = false;
         PdfPlaceholder.IsVisible = true;
         
@@ -345,7 +391,7 @@ public partial class MainWindow : Window
         _fileItems.Clear();
         _logContent.Clear();
         LogBox.Text = "";
-        LogBox.IsVisible = false;
+        SetLogVisibility(false);
         PdfWebView.IsVisible = false;
         PdfPlaceholder.IsVisible = true;
         StatusText.Text = "Not signed in";
@@ -373,7 +419,7 @@ public partial class MainWindow : Window
         LoadingPanel.IsVisible = true;
         ErrorText.IsVisible = false;
         LogBox.Text = "";
-        LogBox.IsVisible = true;
+        SetLogVisibility(true);
 
         int convertedCount = 0;
 

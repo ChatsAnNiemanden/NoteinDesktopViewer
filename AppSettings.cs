@@ -10,6 +10,7 @@ public class AppSettings
     public string LastLocalFolder { get; set; } = string.Empty;
     public string GoogleDriveTargetFolder { get; set; } = "NoteInDataSync";
     public double StrokeDarkenFactor { get; set; } = 1.0;
+    public double LogHeight { get; set; } = 140;
 
     private static string SettingsPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
