@@ -1,6 +1,10 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Notifications;
 using Avalonia.Interactivity;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
+using NoteinDesktopViewer.Helpers;
+using NoteinDesktopViewer.Services;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -10,12 +14,9 @@ using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
 using System.Text.RegularExpressions;
-using NoteinDesktopViewer.Services;
-using NoteinDesktopViewer.Helpers;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace NoteinDesktopViewer;
 
@@ -84,6 +85,8 @@ public partial class MainWindow : Window
     private bool _isSigningIn = false;
     private bool _initializing = false;
 
+    private WindowNotificationManager? _notificationManager;
+
     public MainWindow()
     {
         _settings = AppSettings.Load();
@@ -125,6 +128,19 @@ public partial class MainWindow : Window
 
         UpdateSourceUI();
     }
+
+    protected override void OnLoaded(RoutedEventArgs e)
+    {
+        base.OnLoaded(e);
+
+        _notificationManager = new WindowNotificationManager(this)
+        {
+            Position = NotificationPosition.TopRight,
+            MaxItems = 1
+        };
+    }
+
+
 
     private void OnSourceChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -359,6 +375,8 @@ public partial class MainWindow : Window
         LogBox.Text = "";
         LogBox.IsVisible = true;
 
+        int convertedCount = 0;
+
         try
         {
             // Progress reporter updates the loading text on the UI thread
@@ -443,6 +461,7 @@ public partial class MainWindow : Window
                 progress, 
                 onFileConverted: fileName =>
                 {
+                    Interlocked.Increment(ref convertedCount);
                     var activePdfFolder = _activeService.LocalPdfFolder;
                     var pdfName = Path.GetFileNameWithoutExtension(fileName) + ".pdf";
                     var pngName = Path.GetFileNameWithoutExtension(fileName) + ".png";
@@ -538,6 +557,22 @@ public partial class MainWindow : Window
         {
             LoadingPanel.IsVisible = false;
             _syncLock.Release();
+            
+            if (convertedCount > 0)
+            {
+                _notificationManager ??= new WindowNotificationManager(this)
+                {
+                    Position = NotificationPosition.TopRight,
+                    MaxItems = 1
+                };
+
+                _notificationManager.Show(new Notification(
+                    title: "All notes converted",
+                    message: convertedCount == 1 ? "1 note was successfully converted." : $"{convertedCount} notes were successfully converted.",
+                    type: NotificationType.Success,
+                    expiration: TimeSpan.FromSeconds(5)
+                    ));
+            }
         }
     }
 

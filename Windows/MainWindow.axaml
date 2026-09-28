@@ -33,7 +33,6 @@
                 BorderThickness="0,0,0,1"
                 Padding="16,10">
             <Grid ColumnDefinitions="Auto,*,Auto">
-                
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
                     <ComboBox x:Name="SourceComboBox" SelectionChanged="OnSourceChanged">
                     </ComboBox>
