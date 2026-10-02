@@ -546,10 +546,13 @@ public partial class MainWindow : Window
             else
             {
                 var activePdfFolder = _activeService.LocalPdfFolder;
-                var existingItemsMap = _fileItems.Where(x => x.FileName != "(No files found)").ToDictionary(x => x.FileName);
+                var existingItemsMap = _fileItems.Where(x => x.FileName != "(No files found)")
+                                                 .GroupBy(x => x.FileName)
+                                                 .ToDictionary(g => g.Key, g => g.First());
                 var newItems = new List<FileItem>();
 
-                foreach (var f in files)
+                var uniqueFiles = files.GroupBy(f => f.Name).Select(g => g.First());
+                foreach (var f in uniqueFiles)
                 {
                     var pdfName = Path.GetFileNameWithoutExtension(f.Name) + ".pdf";
                     var pdfPath = Path.Combine(activePdfFolder, pdfName);
