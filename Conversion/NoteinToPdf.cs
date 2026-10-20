@@ -1,9 +1,11 @@
 using Avalonia.Controls;
 using Microsoft.Data.Sqlite;
+using NoteinDesktopViewer.Models;
 using PdfSharp.Drawing;
 using PdfSharp.Fonts;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
+using SkiaSharp;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -738,6 +740,45 @@ namespace NoteinDesktopViewer.Conversion
         }
 
 
+        private static bool CreateFolderImagePreview(string file, string baseDir, NoteFolder noteInfo)
+        {
+            using var fs = File.OpenRead(file);
+            using var bitmap = SKBitmap.Decode(fs);
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            using var outStream = File.OpenWrite(Path.Combine(baseDir, noteInfo.Id));
+
+            data.SaveTo(outStream);
+
+            return true;
+        }
+
+        private static NoteFolder? TryGetFolderInfoWhenNotNote(DirectoryInfo noteDir)
+        {
+            var files = noteDir.GetFiles();
+            if (files.Length == 3)
+            {
+                if (files.Any(f => f.Name == "note_meta.json")){
+                    var correctFile = files.Where(f => f.Name != "note_meta.json" && f.Name != "note_content.sqlite" && !f.Name.Contains("folder_tn_")).FirstOrDefault();
+                    if (correctFile != null)
+                    {
+                        using var fs = correctFile.OpenRead();
+                        using var cf = JsonDocument.Parse(fs);
+                        var id = cf.RootElement.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+                        var parentId = cf.RootElement.TryGetProperty("parent_id", out var parentProp) ? parentProp.GetString() : null;
+                        var name = cf.RootElement.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
+                        return new NoteFolder
+                        {
+                            Id = id ?? "",
+                            ParentId = parentId ?? "",
+                            Name = name ?? noteDir.Name
+                        };
+                    }
+                }
+            }
+            return null;
+        }
+
         private static void ConvertNoteToPdf(DirectoryInfo noteDir, string outputPdfPath)
         {
             var dbFile = FindSqliteDb(noteDir);
@@ -1037,7 +1078,14 @@ namespace NoteinDesktopViewer.Conversion
                 }
                 else
                 {
-                    Console.Error.WriteLine($"Error: No SQLite database found inside {source.Name}");
+                    Console.Error.WriteLine($"Error: No SQLite database found inside {source.Name}. Checking if it is a folder");
+                    var folderInfo = TryGetFolderInfoWhenNotNote(tempPath);
+                    if (folderInfo != null)
+                    {
+                        Console.WriteLine($"Found folder info: Id={folderInfo.Id}, ParentId={folderInfo.ParentId}, Name={folderInfo.Name}");
+                        CreateFolderImagePreview(source.FullName, tempdir, folderInfo);
+                    }
+
                     return false;
                 }
             }
